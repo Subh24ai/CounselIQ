@@ -1,112 +1,243 @@
 // Shared domain types for the CounselIQ frontend.
-// These mirror the backend API contracts.
+// Field names mirror the backend JSON contracts exactly (snake_case).
 
-export type UserRole = "admin" | "counsel" | "analyst" | "viewer";
+// --- Auth & users -----------------------------------------------------------
+export type UserRole =
+  | "org_admin"
+  | "legal_counsel"
+  | "compliance_officer"
+  | "viewer";
+
+export interface User {
+  id: string;
+  organisation_id: string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+  is_active: boolean;
+  last_login: string | null;
+  created_at: string;
+}
 
 export interface Organisation {
   id: string;
   name: string;
-  /** Corporate Identification Number (Indian MCA). */
-  cin: string | null;
-  industry: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface User {
-  id: string;
-  organisationId: string;
-  email: string;
-  fullName: string;
-  role: UserRole;
-  isActive: boolean;
-  createdAt: string;
-  lastLoginAt: string | null;
-}
-
-export type DocumentStatus =
-  | "uploaded"
-  | "processing"
-  | "ocr_complete"
-  | "analysed"
-  | "failed";
-
-export interface Document {
-  id: string;
-  organisationId: string;
-  uploadedById: string;
-  filename: string;
-  contentType: string;
-  sizeBytes: number;
-  s3Key: string;
-  status: DocumentStatus;
-  pageCount: number | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type AnalysisJobStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
-
-export interface AnalysisJob {
-  id: string;
-  documentId: string;
-  organisationId: string;
-  status: AnalysisJobStatus;
-  /** Celery task identifier for tracking. */
-  taskId: string | null;
-  progress: number;
-  riskScore: number | null;
-  error: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  createdAt: string;
-}
-
-export type RiskSeverity = "low" | "medium" | "high" | "critical";
-
-export interface RiskFlag {
-  id: string;
-  analysisJobId: string;
-  documentId: string;
-  severity: RiskSeverity;
-  category: string;
-  title: string;
-  description: string;
-  /** Statute or regulation referenced, e.g. "Companies Act, 2013 s.149". */
-  citation: string | null;
-  pageNumber: number | null;
-  resolved: boolean;
-  createdAt: string;
-}
-
-export type AuditAction =
-  | "document.uploaded"
-  | "document.deleted"
-  | "analysis.started"
-  | "analysis.completed"
-  | "risk.resolved"
-  | "user.login"
-  | "user.logout";
-
-export interface AuditEntry {
-  id: string;
-  organisationId: string;
-  actorId: string | null;
-  action: AuditAction;
-  resourceType: string;
-  resourceId: string | null;
-  metadata: Record<string, unknown>;
-  ipAddress: string | null;
-  createdAt: string;
+  domain: string | null;
+  plan: string;
+  is_active: boolean;
 }
 
 export interface AuthTokens {
-  accessToken: string;
-  tokenType: "bearer";
-  expiresIn: number;
+  access_token: string;
+  refresh_token: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  organisation_name: string;
+  domain?: string | null;
+  plan?: string;
+  email: string;
+  password: string;
+  full_name: string;
+}
+
+export interface RefreshRequest {
+  refresh_token: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+// --- Documents --------------------------------------------------------------
+export type DocumentStatus =
+  | "uploaded"
+  | "queued"
+  | "extracting"
+  | "analysing"
+  | "completed"
+  | "failed";
+
+export type DocumentType =
+  | "vendor_contract"
+  | "employment"
+  | "nda"
+  | "msa"
+  | "policy"
+  | "regulatory"
+  | "other";
+
+export interface Document {
+  id: string;
+  name: string;
+  original_filename: string | null;
+  document_type: DocumentType;
+  status: DocumentStatus;
+  file_size_bytes: number | null;
+  page_count: number | null;
+  mime_type: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  presigned_url: string | null;
+}
+
+export interface DocumentListResponse {
+  items: Document[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface DocumentStatusResponse {
+  id: string;
+  status: DocumentStatus;
+  textract_job_id: string | null;
+  page_count: number | null;
+  updated_at: string;
+}
+
+// --- Analysis ---------------------------------------------------------------
+export type JobStatus =
+  | "pending"
+  | "running"
+  | "awaiting_review"
+  | "completed"
+  | "failed";
+
+export type JobType =
+  | "contract_review"
+  | "due_diligence"
+  | "reg_compliance"
+  | "risk_assessment";
+
+export interface AgentStep {
+  agent: string;
+  status: "started" | "completed" | "failed" | "skipped";
+  input_summary: string;
+  output_summary: string;
+  confidence: number;
+  duration_ms: number;
+  timestamp: string;
+}
+
+export interface AnalysisJob {
+  id: string;
+  document_id: string;
+  status: JobStatus;
+  job_type: JobType;
+  overall_risk_score: number | null;
+  agent_trace: AgentStep[];
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface AnalysisJobListResponse {
+  items: AnalysisJob[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AnalysisJobCreate {
+  document_id: string;
+  job_type: JobType;
+}
+
+// --- Risk flags -------------------------------------------------------------
+export type FlagCategory =
+  | "indemnity"
+  | "liability_cap"
+  | "ip_assignment"
+  | "auto_renewal"
+  | "jurisdiction"
+  | "termination"
+  | "payment_terms"
+  | "confidentiality"
+  | "data_protection"
+  | "regulatory";
+
+export type FlagSeverity = "critical" | "high" | "medium" | "low";
+
+export type FlagStatus = "open" | "accepted" | "rejected" | "resolved";
+
+export interface RiskFlag {
+  id: string;
+  category: FlagCategory | string | null;
+  severity: FlagSeverity | null;
+  title: string;
+  description: string | null;
+  suggested_action: string | null;
+  agent_reasoning: string | null;
+  cited_regulation: string | null;
+  confidence_score: number | null;
+  status: FlagStatus;
+}
+
+export interface RiskFlagUpdateRequest {
+  status: "accepted" | "rejected" | "resolved";
+  notes?: string | null;
+}
+
+export interface AnalysisReportResponse {
+  job: AnalysisJob;
+  risk_flags: RiskFlag[];
+  drafted_alternatives: Record<string, unknown>[];
+  summary_report: string | null;
+  clauses_count: number;
+}
+
+// --- Reviews ----------------------------------------------------------------
+export type ReviewStatus = "pending" | "in_progress" | "approved" | "rejected";
+
+export interface Review {
+  id: string;
+  analysis_job_id: string;
+  reviewed_by: string | null;
+  status: ReviewStatus;
+  notes: string | null;
+  approved_at: string | null;
+  created_at: string;
+  risk_flags: RiskFlag[];
+}
+
+export interface ReviewStartResponse {
+  review_id: string;
+  analysis_job_id: string;
+  status: string;
+  created_at: string;
+}
+
+export interface ReviewSubmitRequest {
+  status: "approved" | "rejected";
+  notes?: string | null;
+}
+
+export interface ReviewSummaryResponse {
+  total_flags: number;
+  accepted: number;
+  rejected: number;
+  resolved: number;
+  open: number;
+  critical_open: number;
+}
+
+// --- WebSocket --------------------------------------------------------------
+export interface WebSocketMessage {
+  type: "connected" | "job_update" | "agent_step" | "pong";
+  job_id?: string;
+  status?: JobStatus;
+  progress?: Record<string, unknown>;
+  step?: AgentStep;
+  organisation_id?: string;
+  user_id?: string;
+  timestamp?: string;
 }
