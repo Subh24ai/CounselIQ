@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 
@@ -27,6 +28,31 @@ engine: AsyncEngine = create_async_engine(
 async_session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
+)
+
+
+def _sync_database_url() -> str:
+    """Return a synchronous (psycopg2) URL for non-async contexts (Celery)."""
+    url = settings.DATABASE_URL.replace(
+        "postgresql+asyncpg", "postgresql+psycopg2"
+    )
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
+# Synchronous engine/session for Celery workers, which run sync code.
+sync_engine = create_engine(
+    _sync_database_url(),
+    pool_pre_ping=True,
+    future=True,
+)
+
+SyncSessionLocal: sessionmaker[Session] = sessionmaker(
+    bind=sync_engine,
+    class_=Session,
     expire_on_commit=False,
     autoflush=False,
 )

@@ -11,7 +11,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.api.v1.analysis import router as analysis_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.documents import router as documents_router
 from app.api.v1.users import router as users_router
 from app.config import settings
 from app.db import init_db
@@ -66,3 +68,5 @@ async def health() -> dict[str, str]:
 # Versioned API surface. Feature routers are mounted under /api/v1.
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
+app.include_router(documents_router, prefix="/api/v1")
+app.include_router(analysis_router, prefix="/api/v1")

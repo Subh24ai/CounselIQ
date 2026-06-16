@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "ap-south-1"
     S3_BUCKET_NAME: str = "counseliq-documents"
+    # Optional custom endpoint (e.g. LocalStack at http://localhost:4566).
+    # When empty, boto3 talks to real AWS.
+    AWS_ENDPOINT_URL: str = ""
 
     # --- Anthropic ----------------------------------------------------------
     ANTHROPIC_API_KEY: str = ""

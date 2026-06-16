@@ -40,3 +40,18 @@ services:
     environment:
       NODE_ENV: development
       WATCHPACK_POLLING: "true"
+
+  # Local AWS emulator for S3 + Textract so document uploads work offline.
+  localstack:
+    image: localstack/localstack:3
+    container_name: counseliq-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3,textract
+      DEFAULT_REGION: ap-south-1
+    volumes:
+      - localstack_data:/var/lib/localstack
+
+volumes:
+  localstack_data:
