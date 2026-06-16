@@ -35,7 +35,7 @@ HIGH_RISK_SEVERITIES = {"critical", "high"}
 
 # --- Node functions ---------------------------------------------------------
 # Agents are constructed lazily inside each node so that the LLM client is only
-# built when the node actually runs (and so tests can patch ``ChatAnthropic``).
+# built when the node actually runs (and so tests can patch ``get_llm``).
 
 
 async def _extractor_node(state: CounselIQState) -> dict:

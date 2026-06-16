@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,8 +47,13 @@ class Settings(BaseSettings):
     # When empty, boto3 talks to real AWS.
     AWS_ENDPOINT_URL: str = ""
 
-    # --- Anthropic ----------------------------------------------------------
-    ANTHROPIC_API_KEY: str = ""
+    # --- LLM providers ------------------------------------------------------
+    # Primary is Anthropic Claude; Groq Llama is the fallback. At least one key
+    # must be configured (enforced below). ``LLM_PROVIDER`` forces a provider;
+    # ``auto`` prefers Anthropic when its key is present.
+    ANTHROPIC_API_KEY: str | None = None
+    GROQ_API_KEY: str | None = None
+    LLM_PROVIDER: str = "auto"  # "auto" | "anthropic" | "groq"
 
     # --- Auth / JWT ---------------------------------------------------------
     JWT_SECRET_KEY: str = "change-me-in-production"
@@ -71,6 +76,29 @@ class Settings(BaseSettings):
                 return stripped
             return [origin.strip() for origin in stripped.split(",") if origin.strip()]
         return value
+
+    @model_validator(mode="after")
+    def check_at_least_one_llm_key(self) -> Settings:
+        """Fail fast at startup if no LLM provider is configured.
+
+        Surfacing this as a configuration error (rather than a runtime error at
+        first inference) means a misconfigured deployment never boots.
+        """
+        if not self.ANTHROPIC_API_KEY and not self.GROQ_API_KEY:
+            raise ValueError(
+                "At least one LLM key required: set ANTHROPIC_API_KEY or GROQ_API_KEY"
+            )
+        return self
+
+    @property
+    def active_llm_provider(self) -> str:
+        """Resolve the provider to use: explicit override, else auto-select.
+
+        In ``auto`` mode Anthropic wins when its key is present, otherwise Groq.
+        """
+        if self.LLM_PROVIDER != "auto":
+            return self.LLM_PROVIDER
+        return "anthropic" if self.ANTHROPIC_API_KEY else "groq"
 
     @property
     def is_production(self) -> bool:

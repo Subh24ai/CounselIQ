@@ -32,14 +32,16 @@ API = "/api/v1"
 
 @contextmanager
 def mock_llm(content: str) -> Iterator[MagicMock]:
-    """Patch ``ChatAnthropic`` so any agent constructed returns ``content``.
+    """Patch the ``get_llm`` factory so any agent constructed returns ``content``.
 
-    The constructed client's ``ainvoke`` is an AsyncMock returning an object
-    with a ``.content`` attribute, mirroring a LangChain ``AIMessage``.
+    The factory yields a client whose ``ainvoke`` is an AsyncMock returning an
+    object with a ``.content`` attribute, mirroring a LangChain ``AIMessage``.
+    This is provider-agnostic — it does not matter whether Anthropic or Groq is
+    configured.
     """
     instance = MagicMock()
     instance.ainvoke = AsyncMock(return_value=SimpleNamespace(content=content))
-    with patch.object(base_module, "ChatAnthropic", MagicMock(return_value=instance)):
+    with patch.object(base_module, "get_llm", MagicMock(return_value=instance)):
         yield instance
 
 
@@ -54,6 +56,43 @@ def _base_state(**overrides) -> CounselIQState:
     )
     state.update(overrides)
     return state
+
+
+# --- LLM provider factory ---------------------------------------------------
+def test_llm_factory_groq(monkeypatch: pytest.MonkeyPatch) -> None:
+    """auto mode with only a Groq key selects ChatGroq."""
+    from langchain_groq import ChatGroq
+
+    from app.utils import llm as llm_module
+
+    monkeypatch.setattr(llm_module.settings, "ANTHROPIC_API_KEY", None)
+    monkeypatch.setattr(llm_module.settings, "GROQ_API_KEY", "test")
+    monkeypatch.setattr(llm_module.settings, "LLM_PROVIDER", "auto")
+
+    assert isinstance(llm_module.get_llm(), ChatGroq)
+
+
+def test_llm_factory_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """auto mode prefers Anthropic when its key is present (even if Groq is too)."""
+    from langchain_anthropic import ChatAnthropic
+
+    from app.utils import llm as llm_module
+
+    monkeypatch.setattr(llm_module.settings, "ANTHROPIC_API_KEY", "test")
+    monkeypatch.setattr(llm_module.settings, "GROQ_API_KEY", "test")
+    monkeypatch.setattr(llm_module.settings, "LLM_PROVIDER", "auto")
+
+    assert isinstance(llm_module.get_llm(), ChatAnthropic)
+
+
+def test_llm_factory_no_keys() -> None:
+    """The config validator fails fast at startup when no LLM key is set."""
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    with pytest.raises(ValidationError, match="At least one LLM key required"):
+        Settings(_env_file=None, ANTHROPIC_API_KEY=None, GROQ_API_KEY=None)
 
 
 # --- 1. Extractor: valid JSON ------------------------------------------------
@@ -186,7 +225,7 @@ async def test_full_graph_runs() -> None:
     }
 
     with (
-        patch.object(base_module, "ChatAnthropic", MagicMock(return_value=MagicMock())),
+        patch.object(base_module, "get_llm", MagicMock(return_value=MagicMock())),
         patch.object(ExtractorAgent, "run", AsyncMock(return_value=extractor_update)),
         patch.object(RiskScorerAgent, "run", AsyncMock(return_value=risk_update)),
         patch.object(ResearcherAgent, "run", AsyncMock(return_value=research_update)),

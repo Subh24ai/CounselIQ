@@ -14,14 +14,13 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
 
 from app.agents.state import AgentStep, CounselIQState
-from app.config import settings
+from app.utils.llm import get_llm
 
-# Single model used across every agent (per product spec).
-LLM_MODEL = "claude-sonnet-4-6"
+# Token ceiling requested for every agent generation. Model selection and model
+# names live solely in ``app.utils.llm``.
 LLM_MAX_TOKENS = 4096
 
 
@@ -29,18 +28,14 @@ class BaseAgent:
     """Common behaviour for all pipeline agents.
 
     Subclasses set ``name`` and implement :meth:`run`. The LLM client is built
-    lazily per instance so that, in tests, patching ``ChatAnthropic`` before the
-    agent is constructed yields a mock client.
+    lazily per instance via the provider factory so that, in tests, patching
+    ``get_llm`` before the agent is constructed yields a mock client.
     """
 
     name: str = "base"
 
     def __init__(self) -> None:
-        self.llm = ChatAnthropic(
-            model=LLM_MODEL,
-            anthropic_api_key=settings.ANTHROPIC_API_KEY,
-            max_tokens=LLM_MAX_TOKENS,
-        )
+        self.llm = get_llm(max_tokens=LLM_MAX_TOKENS)
 
     # --- LLM ----------------------------------------------------------------
     async def _acall_llm(self, prompt: str) -> str:
