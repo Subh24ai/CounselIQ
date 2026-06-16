@@ -14,7 +14,9 @@ from app import __version__
 from app.api.v1.analysis import router as analysis_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.documents import router as documents_router
+from app.api.v1.reviews import router as reviews_router
 from app.api.v1.users import router as users_router
+from app.api.v1.websocket import router as ws_router
 from app.config import settings
 from app.db import init_db
 from app.utils.logging import configure_logging
@@ -70,3 +72,8 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api/v1")
 app.include_router(analysis_router, prefix="/api/v1")
+app.include_router(reviews_router, prefix="/api/v1")
+
+# WebSocket router is mounted at the root (no /api/v1 prefix):
+#   ws://<host>/ws/{organisation_id}?token=<jwt>
+app.include_router(ws_router)

@@ -20,6 +20,7 @@ from app.agents.orchestrator import build_initial_state, counseliq_graph
 from app.db.session import SyncSessionLocal
 from app.models import AnalysisJob, Clause, Document, RiskFlag
 from app.services.audit import write_audit_log_sync
+from app.services.events import publish_agent_step, publish_job_update
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger("counseliq.tasks.analysis")
@@ -63,6 +64,12 @@ def run_analysis_task(self, analysis_job_id: str) -> dict[str, str]:
             session.rollback()
             _mark_failed(session, job, str(exc))
             session.commit()
+            publish_job_update(
+                str(job.organisation_id),
+                str(job.id),
+                "failed",
+                {"error": str(exc)},
+            )
             return {"analysis_job_id": analysis_job_id, "status": "failed"}
     finally:
         session.close()
@@ -70,10 +77,14 @@ def run_analysis_task(self, analysis_job_id: str) -> dict[str, str]:
 
 def _execute(session: Session, job: AnalysisJob) -> dict[str, str]:
     """Run the graph and persist results for a found, fetched job."""
+    org_id = str(job.organisation_id)
+    job_id = str(job.id)
+
     job.status = "running"
     job.started_at = _now()
     job.error_message = None
     session.commit()
+    publish_job_update(org_id, job_id, "running")
 
     document = session.execute(
         select(Document).where(Document.id == job.document_id)
@@ -101,6 +112,10 @@ def _execute(session: Session, job: AnalysisJob) -> dict[str, str]:
 
     config = {"configurable": {"thread_id": str(job.id)}}
     final_state = asyncio.run(counseliq_graph.ainvoke(initial_state, config=config))
+
+    # Stream each agent's trace step to subscribed WebSocket clients.
+    for step in final_state.get("steps", []):
+        publish_agent_step(org_id, job_id, step)
 
     # A hard pipeline error (e.g. no extractable text) is a job failure.
     if final_state.get("error"):
@@ -191,6 +206,15 @@ def _persist_success(
     )
 
     session.commit()
+    publish_job_update(
+        str(job.organisation_id),
+        str(job.id),
+        "awaiting_review",
+        {
+            "overall_risk_score": job.overall_risk_score,
+            "flag_count": len(risk_flags_data),
+        },
+    )
     logger.info(
         "Analysis complete for job %s: score=%s, %d clauses, %d flags",
         job.id,
