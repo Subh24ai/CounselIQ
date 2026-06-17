@@ -22,6 +22,7 @@ celery_app = Celery(
     include=[
         "app.tasks.extraction",
         "app.tasks.analysis",
+        "app.tasks.embeddings",
     ],
 )
 

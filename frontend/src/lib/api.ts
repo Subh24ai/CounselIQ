@@ -15,6 +15,10 @@ import type {
   LoginRequest,
   RefreshRequest,
   RegisterRequest,
+  RegulatoryImpactResponse,
+  RegulatoryUpdate,
+  RegulatoryUpdateCreate,
+  RegulatoryUpdateListResponse,
   Review,
   ReviewStartResponse,
   ReviewSubmitRequest,
@@ -236,6 +240,46 @@ export const reviewsApi = {
     data: ReviewSubmitRequest,
   ): Promise<Review> {
     return (await api.post<Review>(`/reviews/jobs/${jobId}/submit`, data)).data;
+  },
+};
+
+export const regulatoryApi = {
+  async createUpdate(
+    data: RegulatoryUpdateCreate,
+  ): Promise<RegulatoryUpdate> {
+    return (await api.post<RegulatoryUpdate>("/regulatory/updates", data)).data;
+  },
+  async listUpdates(
+    page = 1,
+    pageSize = 20,
+    source?: string,
+  ): Promise<RegulatoryUpdateListResponse> {
+    return (
+      await api.get<RegulatoryUpdateListResponse>("/regulatory/updates", {
+        params: {
+          page,
+          page_size: pageSize,
+          ...(source ? { source } : {}),
+        },
+      })
+    ).data;
+  },
+  async getUpdate(id: string): Promise<RegulatoryUpdate> {
+    return (await api.get<RegulatoryUpdate>(`/regulatory/updates/${id}`)).data;
+  },
+  async getImpact(id: string): Promise<RegulatoryImpactResponse> {
+    return (
+      await api.get<RegulatoryImpactResponse>(
+        `/regulatory/updates/${id}/impact`,
+      )
+    ).data;
+  },
+  async markProcessed(id: string): Promise<RegulatoryUpdate> {
+    return (
+      await api.post<RegulatoryUpdate>(
+        `/regulatory/updates/${id}/mark-processed`,
+      )
+    ).data;
   },
 };
 

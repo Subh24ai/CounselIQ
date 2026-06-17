@@ -26,5 +26,7 @@ class RegulatoryUpdate(UUIDMixin, TimestampMixin, Base):
     full_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     published_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    # 384 dims — matches the local sentence-transformers ``all-MiniLM-L6-v2``
+    # model used by the embedding service.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
     is_processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

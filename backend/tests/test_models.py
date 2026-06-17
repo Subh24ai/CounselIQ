@@ -125,7 +125,10 @@ async def test_audit_log_no_updated_at(db_session: AsyncSession) -> None:
 
 
 def test_clause_embedding_column() -> None:
-    """The clause embedding column must be a pgvector Vector(1536) type."""
+    """The clause embedding column must be a pgvector Vector(384) type.
+
+    384 matches the local sentence-transformers ``all-MiniLM-L6-v2`` model.
+    """
     embedding_type = Clause.__table__.c.embedding.type
     assert isinstance(embedding_type, Vector)
-    assert embedding_type.dim == 1536
+    assert embedding_type.dim == 384

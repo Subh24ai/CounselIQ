@@ -20,6 +20,7 @@ from app.agents.orchestrator import build_initial_state, counseliq_graph
 from app.db.session import SyncSessionLocal
 from app.models import AnalysisJob, Clause, Document, RiskFlag
 from app.services.audit import write_audit_log_sync
+from app.services.embeddings import embedding_service
 from app.services.events import publish_agent_step, publish_job_update
 from app.tasks.celery_app import celery_app
 
@@ -150,6 +151,15 @@ def _persist_success(
         session.add(record)
         created_clauses.append(record)
     session.flush()  # assign clause ids for FK linking
+
+    # Embed each clause (local model, fast) so new analyses are immediately
+    # matchable against regulatory updates without a backfill.
+    if created_clauses:
+        vectors = embedding_service.embed_batch_sync(
+            [clause.content or "" for clause in created_clauses]
+        )
+        for clause, vector in zip(created_clauses, vectors, strict=True):
+            clause.embedding = vector
 
     # 2. Persist risk flags, linking each to its clause via clause_index.
     for flag in risk_flags_data:

@@ -252,6 +252,56 @@ export interface ReviewSummaryResponse {
   critical_open: number;
 }
 
+// --- Regulatory monitor -----------------------------------------------------
+export type RegulatorySource =
+  | "SEBI"
+  | "IRDAI"
+  | "MCA"
+  | "RBI"
+  | "NABH"
+  | "other";
+
+export interface RegulatoryUpdate {
+  id: string;
+  source: RegulatorySource | string | null;
+  title: string;
+  summary: string | null;
+  full_text?: string | null;
+  url: string | null;
+  published_date: string | null;
+  is_processed: boolean;
+  created_at: string;
+}
+
+export interface RegulatoryUpdateCreate {
+  source: string;
+  title: string;
+  summary: string;
+  full_text?: string | null;
+  url?: string | null;
+  published_date: string; // ISO date (YYYY-MM-DD)
+}
+
+export interface RegulatoryUpdateListResponse {
+  items: RegulatoryUpdate[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AffectedDocumentMatch {
+  document_id: string;
+  document_name: string;
+  similarity_score: number; // 0.0-1.0
+  matched_clause_id: string | null;
+  matched_clause_excerpt: string | null;
+}
+
+export interface RegulatoryImpactResponse {
+  regulatory_update: RegulatoryUpdate;
+  affected_documents: AffectedDocumentMatch[];
+}
+
 // --- WebSocket --------------------------------------------------------------
 export interface WebSocketMessage {
   type:

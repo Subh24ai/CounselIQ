@@ -39,6 +39,9 @@ dependencies = [
     "email-validator>=2.0",
     "python-multipart>=0.0.9",
     "httpx>=0.27",
+    # Local CPU embedding model (all-MiniLM-L6-v2, 384 dims) — no embeddings API
+    # key required. Loaded once, lazily, by app.services.embeddings.
+    "sentence-transformers>=3.0",
 ]
 
 [project.optional-dependencies]

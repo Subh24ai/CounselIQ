@@ -33,7 +33,9 @@ class Clause(UUIDMixin, TimestampMixin, Base):
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     position_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     position_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    # 384 dims — matches the local sentence-transformers ``all-MiniLM-L6-v2``
+    # model used by the embedding service (no external embeddings API required).
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(384), nullable=True)
     metadata_: Mapped[dict] = mapped_column(
         "metadata", JSONB, default=dict, nullable=False
     )

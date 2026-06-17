@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   Brain,
   CheckSquare,
@@ -19,6 +20,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { regulatoryApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
 import { useUIStore } from "@/store/ui";
@@ -74,6 +76,20 @@ export function Sidebar() {
     (item) => !item.roles || (user && item.roles.includes(user.role)),
   );
 
+  // Badge count of unprocessed regulatory updates. Lightweight, long staleTime —
+  // this doesn't need to be real-time. Only fetched for roles that see the item.
+  const canSeeRegulatory =
+    !!user && (user.role === "org_admin" || user.role === "compliance_officer");
+  const { data: regulatory } = useQuery({
+    queryKey: ["regulatory", "unprocessed-count"],
+    queryFn: () => regulatoryApi.listUpdates(1, 100),
+    enabled: canSeeRegulatory,
+    staleTime: 60_000,
+  });
+  const unprocessedCount = (regulatory?.items ?? []).filter(
+    (u) => !u.is_processed,
+  ).length;
+
   function handleLogout() {
     logout();
     router.replace("/login");
@@ -103,13 +119,15 @@ export function Sidebar() {
         {visibleItems.map(({ href, label, icon: Icon }) => {
           const active =
             pathname === href || pathname.startsWith(`${href}/`);
+          const badgeCount =
+            href === "/regulatory" ? unprocessedCount : 0;
           return (
             <Link
               key={href}
               href={href}
               title={collapsed ? label : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 active
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
@@ -117,7 +135,15 @@ export function Sidebar() {
               )}
             >
               <Icon className="h-5 w-5 shrink-0" aria-hidden />
-              {!collapsed && <span>{label}</span>}
+              {!collapsed && <span className="flex-1">{label}</span>}
+              {badgeCount > 0 &&
+                (collapsed ? (
+                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
+                ) : (
+                  <Badge variant="default" className="h-5 min-w-5 justify-center px-1.5 text-[10px]">
+                    {badgeCount > 9 ? "9+" : badgeCount}
+                  </Badge>
+                ))}
             </Link>
           );
         })}
