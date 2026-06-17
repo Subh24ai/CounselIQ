@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import base as base_module
 from app.agents.drafter import DrafterAgent
@@ -26,6 +27,7 @@ from app.agents.researcher import ResearcherAgent
 from app.agents.risk_scorer import RiskScorerAgent
 from app.agents.state import CounselIQState
 from app.agents.synthesiser import SynthesiserAgent
+from app.models import Document
 
 API = "/api/v1"
 
@@ -308,14 +310,31 @@ async def _upload_document(client: AsyncClient, headers: dict[str, str]) -> str:
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["status"] == "queued"  # ready for analysis
+    assert body["status"] == "queued"  # freshly uploaded, pending extraction
     return body["id"]
 
 
+async def _mark_extracted(session: AsyncSession, document_id: str) -> None:
+    """Simulate the extraction task completing: flip the document to ``extracted``.
+
+    The real Celery task is mocked in these tests, so a document never leaves
+    ``queued`` on its own; analysis requires the post-extraction ``extracted``
+    state.
+    """
+    document = await session.get(Document, uuid.UUID(document_id))
+    assert document is not None
+    document.status = "extracted"
+    await session.commit()
+
+
 @pytest.mark.asyncio
-async def test_analysis_job_created(api_client: AsyncClient, api_mocks: _ApiMocks) -> None:
+async def test_analysis_job_created(
+    api_client: AsyncClient, api_session: AsyncSession, api_mocks: _ApiMocks
+) -> None:
     headers = await _register(api_client)
     document_id = await _upload_document(api_client, headers)
+    # Analysis is only permitted once extraction has completed.
+    await _mark_extracted(api_session, document_id)
 
     resp = await api_client.post(
         f"{API}/analysis/jobs",
@@ -346,4 +365,25 @@ async def test_analysis_job_rejects_unready_document(
         json={"document_id": str(uuid.uuid4()), "job_type": "contract_review"},
     )
     assert resp.status_code == 404
+    api_mocks.analysis_enqueue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_analysis_job_rejects_queued_document(
+    api_client: AsyncClient, api_mocks: _ApiMocks
+) -> None:
+    """A freshly uploaded (``queued``) document cannot be analysed yet.
+
+    Regression guard for the lifecycle bug: ``queued`` is the pre-extraction
+    state, so analysis must wait for extraction to finish (``extracted``).
+    """
+    headers = await _register(api_client)
+    document_id = await _upload_document(api_client, headers)
+
+    resp = await api_client.post(
+        f"{API}/analysis/jobs",
+        headers=headers,
+        json={"document_id": document_id, "job_type": "contract_review"},
+    )
+    assert resp.status_code == 409, resp.text
     api_mocks.analysis_enqueue.assert_not_called()

@@ -61,9 +61,11 @@ export type DocumentStatus =
   | "uploaded"
   | "queued"
   | "extracting"
+  | "extracted"
   | "analysing"
   | "completed"
-  | "failed";
+  | "failed"
+  | "deleted";
 
 export type DocumentType =
   | "vendor_contract"
@@ -180,6 +182,7 @@ export interface RiskFlag {
   cited_regulation: string | null;
   confidence_score: number | null;
   status: FlagStatus;
+  notes: string | null;
 }
 
 export interface RiskFlagUpdateRequest {
@@ -187,10 +190,29 @@ export interface RiskFlagUpdateRequest {
   notes?: string | null;
 }
 
+export interface DraftedAlternative {
+  clause_index?: number;
+  original_clause_type?: string;
+  alternative_text?: string;
+  changes_summary?: string | string[];
+  negotiation_note?: string;
+  fallback_position?: string;
+}
+
+export interface ResearchFinding {
+  risk_flag_index?: number;
+  regulation_name?: string;
+  section?: string;
+  relevance?: string;
+  implication?: string;
+  source_hint?: string;
+}
+
 export interface AnalysisReportResponse {
   job: AnalysisJob;
   risk_flags: RiskFlag[];
-  drafted_alternatives: Record<string, unknown>[];
+  drafted_alternatives: DraftedAlternative[];
+  research_findings: ResearchFinding[];
   summary_report: string | null;
   clauses_count: number;
 }
@@ -232,9 +254,17 @@ export interface ReviewSummaryResponse {
 
 // --- WebSocket --------------------------------------------------------------
 export interface WebSocketMessage {
-  type: "connected" | "job_update" | "agent_step" | "pong";
+  type:
+    | "connected"
+    | "job_update"
+    | "agent_step"
+    | "pong"
+    | "review_flag_updated"
+    | "review_submitted";
   job_id?: string;
-  status?: JobStatus;
+  flag_id?: string;
+  // job_update carries a JobStatus; review_* events carry a flag/review status.
+  status?: JobStatus | string;
   progress?: Record<string, unknown>;
   step?: AgentStep;
   organisation_id?: string;

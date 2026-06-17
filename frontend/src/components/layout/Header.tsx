@@ -48,6 +48,7 @@ export function Header() {
   const logout = useAuthStore((s) => s.logout);
   const notificationCount = useUIStore((s) => s.notifications.length);
   const isConnected = useWebSocketStore((s) => s.isConnected);
+  const connectionError = useWebSocketStore((s) => s.connectionError);
 
   function handleLogout() {
     logout();
@@ -66,18 +67,22 @@ export function Header() {
                 <span
                   className={cn(
                     "h-2.5 w-2.5 rounded-full",
-                    isConnected ? "bg-emerald-500" : "bg-muted-foreground/40",
+                    isConnected
+                      ? "bg-emerald-500"
+                      : connectionError
+                        ? "bg-destructive"
+                        : "bg-muted-foreground/40",
                   )}
                 />
                 <span className="hidden sm:inline">
-                  {isConnected ? "Live" : "Offline"}
+                  {isConnected ? "Live" : "Disconnected"}
                 </span>
               </span>
             </TooltipTrigger>
             <TooltipContent>
               {isConnected
                 ? "Connected to live updates"
-                : "Live updates disconnected"}
+                : (connectionError ?? "Live updates disconnected")}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

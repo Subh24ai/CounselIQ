@@ -91,11 +91,46 @@ def test_ws_connect_valid_token(ws_env: SimpleNamespace) -> None:
         assert msg["user_id"] == ws_env.user_id
 
 
+def test_ws_connect_real_token_claims(ws_env: SimpleNamespace) -> None:
+    """Connect with a token shaped exactly like production's ``_issue_tokens``.
+
+    Production tokens carry ``sub`` + ``org`` + ``role`` claims (see
+    ``app/api/v1/auth.py``), not the bare ``sub`` the other tests use. This
+    exercises the real claim shape the handshake receives in the browser and
+    would have caught a claim-key/comparison mismatch in the endpoint.
+    """
+    # Mirror auth._issue_tokens() precisely.
+    token = create_access_token(
+        {"sub": ws_env.user_id, "org": ws_env.org_id, "role": "legal_counsel"}
+    )
+    url = f"/ws/{ws_env.org_id}?token={token}"
+    with ws_env.client.websocket_connect(url) as ws:
+        msg = ws.receive_json()
+        assert msg["type"] == "connected"
+        assert msg["organisation_id"] == ws_env.org_id
+        assert msg["user_id"] == ws_env.user_id
+
+
 def test_ws_connect_invalid_token(ws_env: SimpleNamespace) -> None:
     url = f"/ws/{ws_env.org_id}?token=not-a-real-token"
     with pytest.raises(WebSocketDisconnect) as exc, ws_env.client.websocket_connect(url) as ws:
         ws.receive_json()
     assert exc.value.code == 4001
+
+
+def test_ws_connect_org_case_insensitive(ws_env: SimpleNamespace) -> None:
+    """An uppercased org UUID in the URL must still authenticate.
+
+    UUIDs are case-insensitive by value; the endpoint compares ``UUID`` objects
+    rather than string forms, so formatting differences between the URL and the
+    canonical DB value must not produce a spurious 4003.
+    """
+    url = f"/ws/{ws_env.org_id.upper()}?token={ws_env.token}"
+    with ws_env.client.websocket_connect(url) as ws:
+        msg = ws.receive_json()
+        assert msg["type"] == "connected"
+        # Reported back in canonical (lowercase) form.
+        assert msg["organisation_id"] == ws_env.org_id
 
 
 def test_ws_ping_pong(ws_env: SimpleNamespace) -> None:

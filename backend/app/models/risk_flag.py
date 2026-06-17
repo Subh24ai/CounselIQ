@@ -51,6 +51,9 @@ class RiskFlag(UUIDMixin, TimestampMixin, Base):
     cited_regulation: Mapped[str | None] = mapped_column(String(255), nullable=True)
     confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
+    # Reviewer's free-text note for display. The audit log remains the
+    # tamper-evident record of changes; this column is just for the UI.
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     analysis_job: Mapped[AnalysisJob] = relationship(back_populates="risk_flags")
     clause: Mapped[Clause | None] = relationship(back_populates="risk_flags")

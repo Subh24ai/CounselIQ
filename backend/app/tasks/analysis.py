@@ -25,9 +25,9 @@ from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger("counseliq.tasks.analysis")
 
-# A document must have been through extraction (``queued``) or a prior full run
-# (``completed``) before it can be analysed.
-ANALYSABLE_DOCUMENT_STATUSES = {"queued", "completed"}
+# A document must have been through extraction (``extracted``) or a prior full
+# run (``completed``) before it can be analysed.
+ANALYSABLE_DOCUMENT_STATUSES = {"extracted", "completed"}
 
 
 def _now() -> datetime:

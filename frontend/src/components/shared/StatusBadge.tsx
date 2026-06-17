@@ -21,7 +21,10 @@ const VARIANT_MAP: Record<string, BadgeVariant> = {
   uploaded: "secondary",
   queued: "info",
   extracting: "info",
+  extracted: "success",
   analysing: "info",
+  // Soft-deleted: muted/neutral, never a failure style.
+  deleted: "secondary",
   // Flag statuses
   open: "outline",
   accepted: "success",

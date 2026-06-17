@@ -82,7 +82,7 @@ def _extract_non_pdf(document: Document) -> TextractResult:
 def extract_document_task(self, document_id: str) -> dict[str, str]:
     """Extract text from a document and mark it ready for analysis.
 
-    On success the document moves to ``queued``; on any failure it moves to
+    On success the document moves to ``extracted``; on any failure it moves to
     ``failed``. The function always commits and closes its session.
     """
     session = SyncSessionLocal()
@@ -110,10 +110,10 @@ def extract_document_task(self, document_id: str) -> dict[str, str]:
 
             document.extracted_text = result.text
             document.page_count = result.page_count
-            document.status = "queued"
+            document.status = "extracted"
             session.commit()
             logger.info("Extraction complete for document %s", document_id)
-            return {"document_id": document_id, "status": "queued"}
+            return {"document_id": document_id, "status": "extracted"}
 
         except Exception as exc:
             logger.exception(

@@ -22,7 +22,8 @@ class Document(UUIDMixin, TimestampMixin, Base):
     """A document uploaded for analysis.
 
     ``status`` is one of: ``uploaded``, ``queued``, ``extracting``,
-    ``analysing``, ``completed``, ``failed``.
+    ``analysing``, ``completed``, ``failed``, ``deleted``. ``deleted`` is a
+    soft-delete sentinel and must never be treated as a failure state.
 
     ``document_type`` is one of: ``vendor_contract``, ``employment``, ``nda``,
     ``msa``, ``policy``, ``regulatory``, ``other``.

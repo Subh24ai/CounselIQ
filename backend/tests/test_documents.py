@@ -218,7 +218,40 @@ async def test_delete_document(
     assert resp.json()["message"] == "Document deleted"
     aws_mocks.delete_file.assert_awaited_once()
 
-    # Record is kept (soft delete) but status flips to failed.
+    # Record is kept (soft delete) and status flips to the dedicated
+    # "deleted" sentinel — never "failed", which is reserved for real failures.
     after = await api_client.get(f"{API}/documents/{doc_id}", headers=headers)
     assert after.status_code == 200
-    assert after.json()["status"] == "failed"
+    assert after.json()["status"] == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_list_documents_excludes_deleted(
+    api_client: AsyncClient, aws_mocks: AwsMocks
+) -> None:
+    headers = await _register(api_client)
+    await _upload(api_client, headers, filename="keep.pdf", name="Keep Me")
+    doc_id = (
+        await _upload(api_client, headers, filename="gone.pdf", name="Delete Me")
+    ).json()["id"]
+
+    resp = await api_client.delete(f"{API}/documents/{doc_id}", headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    # Default list omits the soft-deleted document.
+    listing = await api_client.get(f"{API}/documents/", headers=headers)
+    assert listing.status_code == 200, listing.text
+    body = listing.json()
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["id"] != doc_id
+
+    # include_deleted=true brings it back.
+    with_deleted = await api_client.get(
+        f"{API}/documents/?include_deleted=true", headers=headers
+    )
+    assert with_deleted.status_code == 200, with_deleted.text
+    body = with_deleted.json()
+    assert body["total"] == 2
+    assert len(body["items"]) == 2
+    assert any(item["id"] == doc_id for item in body["items"])

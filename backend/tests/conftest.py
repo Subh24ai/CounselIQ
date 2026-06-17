@@ -9,6 +9,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
@@ -72,7 +73,26 @@ async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 
 @pytest_asyncio.fixture
-async def api_client(db_engine: AsyncEngine) -> AsyncIterator[AsyncClient]:
+async def api_connection(db_engine: AsyncEngine) -> AsyncIterator[AsyncConnection]:
+    """A single test connection wrapped in an outer transaction.
+
+    Shared by :func:`api_client` and :func:`api_session` so request handlers and
+    test-side data setup observe each other's commits (savepoint releases) while
+    the outer transaction is rolled back on teardown, keeping the DB pristine.
+    """
+    connection = await db_engine.connect()
+    transaction = await connection.begin()
+    try:
+        yield connection
+    finally:
+        await transaction.rollback()
+        await connection.close()
+
+
+@pytest_asyncio.fixture
+async def api_client(
+    api_connection: AsyncConnection,
+) -> AsyncIterator[AsyncClient]:
     """An AsyncClient whose requests share one rolled-back DB transaction.
 
     The app's ``get_db`` dependency is overridden to yield sessions bound to a
@@ -81,11 +101,8 @@ async def api_client(db_engine: AsyncEngine) -> AsyncIterator[AsyncClient]:
     transaction is rolled back on teardown, keeping the database pristine while
     still letting request handlers commit as they do in production.
     """
-    connection = await db_engine.connect()
-    transaction = await connection.begin()
-
     test_session_factory = async_sessionmaker(
-        bind=connection,
+        bind=api_connection,
         expire_on_commit=False,
         join_transaction_mode="create_savepoint",
     )
@@ -103,5 +120,22 @@ async def api_client(db_engine: AsyncEngine) -> AsyncIterator[AsyncClient]:
             yield ac
     finally:
         app.dependency_overrides.pop(get_db, None)
-        await transaction.rollback()
-        await connection.close()
+
+
+@pytest_asyncio.fixture
+async def api_session(
+    api_connection: AsyncConnection,
+) -> AsyncIterator[AsyncSession]:
+    """A session on the same connection as :func:`api_client`.
+
+    Lets a test set up or inspect rows that request handlers can see (and vice
+    versa) — e.g. marking a document ``extracted`` to simulate the extraction
+    task completing without running the real Celery pipeline.
+    """
+    factory = async_sessionmaker(
+        bind=api_connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    async with factory() as session:
+        yield session

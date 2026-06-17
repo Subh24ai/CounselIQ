@@ -145,11 +145,12 @@ async def upload_document(
     )
 
     # Hand off extraction to the worker and mark the document queued.
-    extract_document_task.delay(str(document.id))
     document.status = "queued"
 
     await db.commit()
     await db.refresh(document)
+
+    extract_document_task.delay(str(document.id))
     return document
 
 
@@ -159,11 +160,18 @@ async def list_documents(
     db: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    include_deleted: bool = Query(False),
 ) -> DocumentListResponse:
-    """List the organisation's documents, newest first (paginated)."""
+    """List the organisation's documents, newest first (paginated).
+
+    Soft-deleted documents (``status == "deleted"``) are excluded by default;
+    pass ``include_deleted=true`` to include them.
+    """
     base = select(Document).where(
         Document.organisation_id == current_user.organisation_id
     )
+    if not include_deleted:
+        base = base.where(Document.status != "deleted")
 
     total = await db.scalar(
         select(func.count()).select_from(base.subquery())
@@ -220,13 +228,18 @@ async def delete_document(
     current_user: User = Depends(require_document_deleter),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    """Delete a document's S3 object and mark the record failed (soft delete)."""
+    """Delete a document's S3 object and mark the record deleted (soft delete).
+
+    ``status`` is set to the dedicated ``"deleted"`` sentinel rather than
+    ``"failed"`` so soft-deleted rows stay distinguishable from genuine
+    extraction/processing failures in the DB, UI, and audit/analytics queries.
+    """
     document = await _get_org_document(
         db, document_id, current_user.organisation_id
     )
 
     await s3_service.delete_file(document.s3_key)
-    document.status = "failed"
+    document.status = "deleted"
 
     await write_audit_log(
         db,

@@ -64,6 +64,20 @@ async function performRefresh(): Promise<string> {
   return data.access_token;
 }
 
+/**
+ * Single-flight access-token refresh. Concurrent callers (the HTTP 401
+ * interceptor and the WebSocket store's pre-connect freshness check) share one
+ * in-flight refresh request and resolve to the same new access token.
+ */
+export function refreshAccessToken(): Promise<string> {
+  if (!refreshPromise) {
+    refreshPromise = performRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -78,12 +92,7 @@ api.interceptors.response.use(
     if (status === 401 && original && !original._retry && !skipRefresh) {
       original._retry = true;
       try {
-        if (!refreshPromise) {
-          refreshPromise = performRefresh().finally(() => {
-            refreshPromise = null;
-          });
-        }
-        const newToken = await refreshPromise;
+        const newToken = await refreshAccessToken();
         original.headers.set("Authorization", `Bearer ${newToken}`);
         return api(original);
       } catch (refreshError) {
@@ -128,18 +137,30 @@ export const authApi = {
 };
 
 export const documentsApi = {
-  async uploadDocument(formData: FormData): Promise<Document> {
+  async uploadDocument(
+    formData: FormData,
+    onProgress?: (percent: number) => void,
+  ): Promise<Document> {
     return (
       await api.post<Document>("/documents/upload", formData, {
         // Let the browser set the multipart boundary.
         headers: { "Content-Type": undefined },
+        onUploadProgress: (event) => {
+          if (onProgress && event.total) {
+            onProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        },
       })
     ).data;
   },
-  async listDocuments(page = 1, pageSize = 20): Promise<DocumentListResponse> {
+  async listDocuments(
+    page = 1,
+    pageSize = 20,
+    includeDeleted = false,
+  ): Promise<DocumentListResponse> {
     return (
       await api.get<DocumentListResponse>("/documents/", {
-        params: { page, page_size: pageSize },
+        params: { page, page_size: pageSize, include_deleted: includeDeleted },
       })
     ).data;
   },
@@ -184,6 +205,13 @@ export const analysisApi = {
 };
 
 export const reviewsApi = {
+  async listReviews(page = 1, pageSize = 100): Promise<Review[]> {
+    return (
+      await api.get<Review[]>("/reviews/", {
+        params: { page, page_size: pageSize },
+      })
+    ).data;
+  },
   async startReview(jobId: string): Promise<ReviewStartResponse> {
     return (
       await api.post<ReviewStartResponse>(`/reviews/jobs/${jobId}/start`)

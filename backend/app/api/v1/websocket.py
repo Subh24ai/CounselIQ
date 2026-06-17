@@ -44,31 +44,75 @@ async def websocket_endpoint(
     """
     payload = decode_access_token(token)
     if not payload or not payload.get("sub"):
+        logger.warning(
+            "WS rejected: reason=%s user_org=%s url_org=%s",
+            "invalid_or_missing_token",
+            None,
+            organisation_id,
+        )
         await websocket.close(code=4001)
         return
 
     try:
         user_id = UUID(str(payload["sub"]))
     except (ValueError, TypeError):
+        logger.warning(
+            "WS rejected: reason=%s user_org=%s url_org=%s",
+            "malformed_sub_claim",
+            None,
+            organisation_id,
+        )
         await websocket.close(code=4001)
+        return
+
+    # Parse the requested org from the URL into a UUID so the comparison below
+    # is value-based (case-/format-insensitive) rather than a brittle string
+    # match — and so the manager/Redis key is the canonical form the Celery
+    # publisher uses (``str(uuid)``), keeping broadcasts correctly routed.
+    try:
+        requested_org = UUID(str(organisation_id))
+    except (ValueError, TypeError):
+        logger.warning(
+            "WS rejected: reason=%s user_org=%s url_org=%s",
+            "malformed_org_in_url",
+            None,
+            organisation_id,
+        )
+        await websocket.close(code=4003)
         return
 
     user = (
         await db.execute(select(User).where(User.id == user_id))
     ).scalar_one_or_none()
     if user is None or not user.is_active:
+        logger.warning(
+            "WS rejected: reason=%s user_org=%s url_org=%s",
+            "unknown_or_inactive_user",
+            None,
+            requested_org,
+        )
         await websocket.close(code=4001)
         return
 
-    if str(user.organisation_id) != organisation_id:
+    # Compare UUID objects, not their string forms: ``user.organisation_id`` is
+    # a ``uuid.UUID`` and ``UUID.__eq__`` is value-based, so casing/formatting
+    # differences in the URL never cause a spurious 4003.
+    if user.organisation_id != requested_org:
+        logger.warning(
+            "WS rejected: reason=%s user_org=%s url_org=%s",
+            "org_mismatch",
+            user.organisation_id,
+            requested_org,
+        )
         await websocket.close(code=4003)
         return
 
-    await ws_manager.connect(websocket, organisation_id)
+    org_key = str(requested_org)
+    await ws_manager.connect(websocket, org_key)
     await websocket.send_json(
         {
             "type": "connected",
-            "organisation_id": organisation_id,
+            "organisation_id": org_key,
             "user_id": str(user.id),
             "timestamp": datetime.now(UTC).isoformat(),
         }
@@ -80,4 +124,4 @@ async def websocket_endpoint(
             if data == "ping":
                 await websocket.send_text('{"type":"pong"}')
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket, organisation_id)
+        ws_manager.disconnect(websocket, org_key)

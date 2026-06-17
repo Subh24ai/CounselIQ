@@ -61,6 +61,7 @@ class RiskFlagResponse(BaseModel):
     cited_regulation: str | None
     confidence_score: float | None
     status: str
+    notes: str | None
 
 
 class AnalysisReportResponse(BaseModel):
@@ -69,5 +70,6 @@ class AnalysisReportResponse(BaseModel):
     job: AnalysisJobResponse
     risk_flags: list[RiskFlagResponse]
     drafted_alternatives: list[dict]
+    research_findings: list[dict]
     summary_report: str | None
     clauses_count: int

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AnalysisJob, Review, RiskFlag
 from app.schemas.review import ReviewSubmitRequest, ReviewSummaryResponse
 from app.services.audit import write_audit_log
+from app.services.events import publish_job_event
 
 
 async def _get_org_job(
@@ -114,6 +115,9 @@ async def update_risk_flag(
         )
 
     flag.status = new_status
+    # Persist the note on the row for display; the audit log below remains the
+    # tamper-evident trail of the change.
+    flag.notes = notes
 
     await write_audit_log(
         db,
@@ -126,6 +130,17 @@ async def update_risk_flag(
     )
     await db.commit()
     await db.refresh(flag)
+
+    # Notify other reviewers viewing this job in real time (best-effort).
+    publish_job_event(
+        str(organisation_id),
+        {
+            "type": "review_flag_updated",
+            "job_id": str(flag.analysis_job_id),
+            "flag_id": str(flag_id),
+            "status": new_status,
+        },
+    )
     return flag
 
 
@@ -195,6 +210,16 @@ async def submit_review(
     )
     await db.commit()
     await db.refresh(review)
+
+    # Notify other reviewers viewing this job in real time (best-effort).
+    publish_job_event(
+        str(organisation_id),
+        {
+            "type": "review_submitted",
+            "job_id": str(review.analysis_job_id),
+            "status": submit.status,
+        },
+    )
     return review
 
 

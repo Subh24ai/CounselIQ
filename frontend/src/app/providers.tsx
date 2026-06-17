@@ -5,6 +5,7 @@ import { ThemeProvider } from "next-themes";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { NotificationPanel } from "@/components/layout/NotificationPanel";
+import { setSharedQueryClient } from "@/lib/queryClient";
 import { useAuthStore } from "@/store/auth";
 
 /** Runs the auth bootstrap (rehydrate token, fetch current user) once on mount. */
@@ -31,6 +32,12 @@ export function Providers({ children }: { children: ReactNode }) {
         },
       }),
   );
+
+  // Register the instance so non-React code (the WebSocket store) can invalidate
+  // queries when the server pushes events. Browser-only, so no SSR state leak.
+  useEffect(() => {
+    setSharedQueryClient(queryClient);
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

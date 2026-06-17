@@ -33,8 +33,8 @@ logger = logging.getLogger("counseliq.api.analysis")
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
-# A document must be extracted (queued) or previously completed to be analysed.
-ANALYSABLE_DOCUMENT_STATUSES = {"queued", "completed"}
+# A document must be extracted or previously completed to be analysed.
+ANALYSABLE_DOCUMENT_STATUSES = {"extracted", "completed"}
 
 # Statuses for which a full report is meaningful.
 REPORTABLE_JOB_STATUSES = {"awaiting_review", "completed"}
@@ -239,12 +239,14 @@ async def get_analysis_report(
 
     trace = _trace_dict(job)
     drafted = trace.get("drafted_alternatives")
+    research = trace.get("research_findings")
     summary = trace.get("summary_report")
 
     return AnalysisReportResponse(
         job=_job_to_response(job),
         risk_flags=[RiskFlagResponse.model_validate(flag) for flag in risk_flags],
         drafted_alternatives=drafted if isinstance(drafted, list) else [],
+        research_findings=research if isinstance(research, list) else [],
         summary_report=summary if isinstance(summary, str) else None,
         clauses_count=clauses_count or 0,
     )

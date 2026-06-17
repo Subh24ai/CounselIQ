@@ -4,6 +4,8 @@ export interface RiskScoreGaugeProps {
   score: number; // 0-100
   size?: number; // px diameter
   className?: string;
+  /** Compact mode: just the ring + number, no "/100" or label (for tables). */
+  compact?: boolean;
 }
 
 function riskBand(score: number): { label: string; color: string } {
@@ -16,6 +18,7 @@ export function RiskScoreGauge({
   score,
   size = 140,
   className,
+  compact = false,
 }: RiskScoreGaugeProps) {
   const clamped = Math.max(0, Math.min(100, score));
   const { label, color } = riskBand(clamped);
@@ -56,15 +59,25 @@ export function RiskScoreGauge({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-bold tabular-nums">
+          <span
+            className={cn(
+              "font-bold tabular-nums",
+              compact ? "text-sm" : "text-3xl",
+            )}
+            style={compact ? { color } : undefined}
+          >
             {Math.round(clamped)}
           </span>
-          <span className="text-xs text-muted-foreground">/ 100</span>
+          {!compact && (
+            <span className="text-xs text-muted-foreground">/ 100</span>
+          )}
         </div>
       </div>
-      <span className="mt-2 text-sm font-medium" style={{ color }}>
-        {label}
-      </span>
+      {!compact && (
+        <span className="mt-2 text-sm font-medium" style={{ color }}>
+          {label}
+        </span>
+      )}
     </div>
   );
 }

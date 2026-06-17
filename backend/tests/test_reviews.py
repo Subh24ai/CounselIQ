@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -246,6 +247,71 @@ async def test_submit_review_approved(review_env: SimpleNamespace) -> None:
 async def test_viewer_cannot_start_review(review_env: SimpleNamespace) -> None:
     resp = await _start(review_env, role="viewer")
     assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_flag_notes_persist_after_reload(review_env: SimpleNamespace) -> None:
+    await _start(review_env)
+    note = "Acceptable given the negotiated liability cap."
+
+    patch_resp = await review_env.client.patch(
+        f"{API}/reviews/flags/{review_env.ids.high_flag_id}",
+        headers=review_env.headers["counsel"],
+        json={"status": "accepted", "notes": note},
+    )
+    assert patch_resp.status_code == 200, patch_resp.text
+    assert patch_resp.json()["notes"] == note
+
+    # Re-fetch the review (simulating a page reload) and confirm the note
+    # survived on the flag row, not just in the audit log.
+    review_resp = await review_env.client.get(
+        f"{API}/reviews/jobs/{review_env.ids.job_id}",
+        headers=review_env.headers["counsel"],
+    )
+    assert review_resp.status_code == 200, review_resp.text
+    flags = {f["id"]: f for f in review_resp.json()["risk_flags"]}
+    assert flags[str(review_env.ids.high_flag_id)]["notes"] == note
+
+
+@pytest.mark.asyncio
+async def test_flag_update_publishes_event(review_env: SimpleNamespace) -> None:
+    await _start(review_env)
+    with patch("app.services.review.publish_job_event") as publish:
+        resp = await review_env.client.patch(
+            f"{API}/reviews/flags/{review_env.ids.high_flag_id}",
+            headers=review_env.headers["counsel"],
+            json={"status": "accepted", "notes": "fine"},
+        )
+    assert resp.status_code == 200, resp.text
+    publish.assert_called_once()
+    event = publish.call_args.args[1]
+    assert event["type"] == "review_flag_updated"
+    assert event["job_id"] == str(review_env.ids.job_id)
+    assert event["flag_id"] == str(review_env.ids.high_flag_id)
+    assert event["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_submit_review_publishes_event(review_env: SimpleNamespace) -> None:
+    await _start(review_env)
+    for flag_id in (review_env.ids.critical_flag_id, review_env.ids.high_flag_id):
+        await review_env.client.patch(
+            f"{API}/reviews/flags/{flag_id}",
+            headers=review_env.headers["counsel"],
+            json={"status": "accepted"},
+        )
+    with patch("app.services.review.publish_job_event") as publish:
+        resp = await review_env.client.post(
+            f"{API}/reviews/jobs/{review_env.ids.job_id}/submit",
+            headers=review_env.headers["counsel"],
+            json={"status": "approved", "notes": "Approved."},
+        )
+    assert resp.status_code == 200, resp.text
+    publish.assert_called_once()
+    event = publish.call_args.args[1]
+    assert event["type"] == "review_submitted"
+    assert event["job_id"] == str(review_env.ids.job_id)
+    assert event["status"] == "approved"
 
 
 @pytest.mark.asyncio
