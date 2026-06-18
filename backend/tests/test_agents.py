@@ -28,7 +28,7 @@ from app.agents.researcher import ResearcherAgent
 from app.agents.risk_scorer import RiskScorerAgent
 from app.agents.state import CounselIQState
 from app.agents.synthesiser import SynthesiserAgent
-from app.models import Document
+from app.models import AnalysisJob, Document
 
 API = "/api/v1"
 
@@ -398,6 +398,8 @@ async def _mark_extracted(session: AsyncSession, document_id: str) -> None:
     document = await session.get(Document, uuid.UUID(document_id))
     assert document is not None
     document.status = "extracted"
+    # A genuinely-extracted document carries its text; analysis requires it.
+    document.extracted_text = "Sample extracted contract text for testing."
     await session.commit()
 
 
@@ -460,4 +462,64 @@ async def test_analysis_job_rejects_queued_document(
         json={"document_id": document_id, "job_type": "contract_review"},
     )
     assert resp.status_code == 409, resp.text
+    api_mocks.analysis_enqueue.assert_not_called()
+
+
+async def test_analysis_job_allowed_for_orphaned_analysing_document(
+    api_client: AsyncClient, api_session: AsyncSession, api_mocks: _ApiMocks
+) -> None:
+    """A document orphaned in 'analysing' (crashed worker, no active job) can be re-analysed."""
+    headers = await _register(api_client)
+    document_id = await _upload_document(api_client, headers)
+    await _mark_extracted(api_session, document_id)  # sets extracted_text
+
+    # Simulate the orphan: a crashed worker left the document stuck 'analysing'
+    # with no pending/running job to recover it.
+    doc = await api_session.get(Document, uuid.UUID(document_id))
+    assert doc is not None
+    doc.status = "analysing"
+    await api_session.commit()
+
+    resp = await api_client.post(
+        f"{API}/analysis/jobs",
+        headers=headers,
+        json={"document_id": document_id, "job_type": "contract_review"},
+    )
+    assert resp.status_code == 201, resp.text
+    api_mocks.analysis_enqueue.assert_called_once_with(resp.json()["id"])
+
+    # The stale status was healed at creation so the pipeline precondition holds.
+    await api_session.refresh(doc)
+    assert doc.status == "extracted"
+
+
+async def test_analysis_job_blocked_when_in_progress(
+    api_client: AsyncClient, api_session: AsyncSession, api_mocks: _ApiMocks
+) -> None:
+    """A pending/running job for the document blocks a new analysis (409)."""
+    headers = await _register(api_client)
+    document_id = await _upload_document(api_client, headers)
+    await _mark_extracted(api_session, document_id)
+
+    doc = await api_session.get(Document, uuid.UUID(document_id))
+    assert doc is not None
+    api_session.add(
+        AnalysisJob(
+            document_id=doc.id,
+            organisation_id=doc.organisation_id,
+            initiated_by=doc.uploaded_by,
+            status="running",
+            job_type="contract_review",
+            agent_trace=[],
+        )
+    )
+    await api_session.commit()
+
+    resp = await api_client.post(
+        f"{API}/analysis/jobs",
+        headers=headers,
+        json={"document_id": document_id, "job_type": "contract_review"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert "in progress" in resp.json()["detail"].lower()
     api_mocks.analysis_enqueue.assert_not_called()

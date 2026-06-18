@@ -13,6 +13,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,18 @@ logger = logging.getLogger("counseliq.tasks.analysis")
 # run (``completed``) before it can be analysed.
 ANALYSABLE_DOCUMENT_STATUSES = {"extracted", "completed"}
 
+# Hard ceilings on a single analysis run. The longest legitimate run observed is
+# ~90s, plus ~25s of Groq rate-limit retries — 300s is a generous margin. The
+# hard limit (330s) leaves the soft handler ~30s to persist the failure before
+# the worker forcibly kills the task.
+SOFT_TIME_LIMIT_SECONDS = 300
+HARD_TIME_LIMIT_SECONDS = 330
+
+SOFT_TIMEOUT_MESSAGE = (
+    "Analysis exceeded the maximum runtime "
+    f"({SOFT_TIME_LIMIT_SECONDS}s) and was terminated."
+)
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -39,15 +52,22 @@ def _now() -> datetime:
     name="app.tasks.analysis.run_analysis_task",
     bind=True,
     queue="analysis",
+    soft_time_limit=SOFT_TIME_LIMIT_SECONDS,
+    time_limit=HARD_TIME_LIMIT_SECONDS,
 )
 def run_analysis_task(self, analysis_job_id: str) -> dict[str, str]:
     """Execute the analysis pipeline for one :class:`AnalysisJob`.
 
     On success the job moves to ``awaiting_review`` with its risk score, trace,
     clauses, and risk flags persisted, and the document moves to ``completed``.
-    On any failure the job moves to ``failed`` with an error message. The
-    function always commits and closes its session.
+    On any failure — including a soft timeout — the job moves to ``failed`` with
+    an error message. The function always commits and closes its session.
+
+    A SIGKILL'd/restarted worker can still leave a job stuck in ``running``
+    (no handler runs when the process dies); that case is recovered separately
+    by :func:`app.tasks.maintenance.detect_stale_jobs_task`.
     """
+    task_id = self.request.id
     session = SyncSessionLocal()
     try:
         job = session.execute(
@@ -58,21 +78,40 @@ def run_analysis_task(self, analysis_job_id: str) -> dict[str, str]:
             logger.error(
                 "AnalysisJob %s not found",
                 analysis_job_id,
-                extra={"job_id": analysis_job_id},
+                extra={"job_id": analysis_job_id, "task_id": task_id},
             )
             return {"analysis_job_id": analysis_job_id, "status": "not_found"}
 
+        log_extra = {
+            "organisation_id": str(job.organisation_id),
+            "job_id": str(job.id),
+            "task_id": task_id,
+        }
+
         try:
             return _execute(session, job)
+        except SoftTimeLimitExceeded:
+            # The task ran past its soft limit; persist the failure, then
+            # re-raise so Celery records the task itself as failed.
+            logger.error(
+                "Analysis timed out for job %s", analysis_job_id, extra=log_extra
+            )
+            session.rollback()
+            _mark_failed(session, job, SOFT_TIMEOUT_MESSAGE)
+            session.commit()
+            publish_job_update(
+                str(job.organisation_id),
+                str(job.id),
+                "failed",
+                {"error": SOFT_TIMEOUT_MESSAGE},
+            )
+            raise
         except Exception as exc:  # noqa: BLE001 - persist failure, never lose the job
             logger.exception(
                 "Analysis failed for job %s: %s",
                 analysis_job_id,
                 exc,
-                extra={
-                    "organisation_id": str(job.organisation_id),
-                    "job_id": str(job.id),
-                },
+                extra=log_extra,
             )
             session.rollback()
             _mark_failed(session, job, str(exc))

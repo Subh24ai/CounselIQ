@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { isAnalysableStatus } from "@/lib/analysis";
 import { documentsApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
@@ -288,7 +289,7 @@ export default function DocumentsPage() {
                         <Button variant="ghost" size="sm" asChild>
                           <Link href={`/documents/${doc.id}`}>View</Link>
                         </Button>
-                        {doc.status === "extracted" && (
+                        {isAnalysableStatus(doc.status) && (
                           <Button
                             variant="ghost"
                             size="sm"

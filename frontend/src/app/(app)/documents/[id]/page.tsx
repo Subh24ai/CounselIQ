@@ -31,6 +31,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { canStartAnalysis, hasActiveAnalysisJob } from "@/lib/analysis";
 import { analysisApi, documentsApi } from "@/lib/api";
 import { formatDate, formatRiskScore, riskScoreColor } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -114,6 +121,16 @@ export default function DocumentDetailPage() {
 
   const jobs = jobsQuery.data ?? [];
 
+  // "In progress" is determined SOLELY by live job state — only an actual
+  // pending/running job blocks a new analysis. A document orphaned in
+  // 'analysing' (a crashed worker that never reset it) must NOT block, because
+  // there is no active job.
+  const analysisInProgress = hasActiveAnalysisJob(jobs);
+  // Re-analysable once extracted; a prior job proves extraction succeeded, so a
+  // stale 'analysing'/'failed' document status never blocks re-analysis.
+  const canAnalyse = canStartAnalysis(doc.status, jobs);
+  const showAnalyse = canAnalyse || analysisInProgress;
+
   return (
     <div className="space-y-6">
       <BackLink />
@@ -143,12 +160,29 @@ export default function DocumentDetailPage() {
               </a>
             </Button>
           )}
-          {doc.status === "extracted" && (
-            <Button onClick={() => setAnalyseOpen(true)}>
-              <Brain className="mr-2 h-4 w-4" />
-              Analyse
-            </Button>
-          )}
+          {showAnalyse &&
+            (analysisInProgress ? (
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span tabIndex={0}>
+                      <Button disabled>
+                        <Brain className="mr-2 h-4 w-4" />
+                        Analyse
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    An analysis is already in progress for this document.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <Button onClick={() => setAnalyseOpen(true)}>
+                <Brain className="mr-2 h-4 w-4" />
+                Analyse
+              </Button>
+            ))}
         </div>
       </div>
 
@@ -180,8 +214,7 @@ export default function DocumentDetailPage() {
               ) : jobs.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground">
                   No analyses run yet.
-                  {doc.status === "extracted" &&
-                    " Use the Analyse button to start one."}
+                  {canAnalyse && " Use the Analyse button to start one."}
                 </p>
               ) : (
                 <Table>

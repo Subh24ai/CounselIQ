@@ -155,6 +155,17 @@ export default function AnalysisJobPage() {
     );
     const currentAgent = AGENT_ORDER.find((a) => !done.has(a)) ?? null;
 
+    // Polling re-renders this view every 3s, so this flips on once a running
+    // job has been going for over 3 minutes (well before automated recovery
+    // marks a truly orphaned job failed at the 10-minute mark).
+    const startedAtMs = job.started_at
+      ? new Date(job.started_at).getTime()
+      : null;
+    const runningTooLong =
+      effectiveStatus === "running" &&
+      startedAtMs !== null &&
+      Date.now() - startedAtMs > 3 * 60 * 1000;
+
     return (
       <div className="space-y-6">
         <BackLink />
@@ -173,6 +184,12 @@ export default function AnalysisJobPage() {
             <p className="text-center text-sm text-muted-foreground">
               This typically takes 30–90 seconds. Results appear automatically.
             </p>
+            {runningTooLong && (
+              <p className="text-center text-sm text-amber-600">
+                This is taking longer than usual. If it doesn&apos;t complete
+                soon, try starting a new analysis.
+              </p>
+            )}
           </CardContent>
         </Card>
 

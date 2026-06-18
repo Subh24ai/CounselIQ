@@ -37,6 +37,11 @@ router = APIRouter(prefix="/analysis", tags=["analysis"])
 # A document must be extracted or previously completed to be analysed.
 ANALYSABLE_DOCUMENT_STATUSES = {"extracted", "completed"}
 
+# Job statuses that mean an analysis is genuinely in progress. These — and ONLY
+# these — block a new analysis for the same document. The document's own status
+# is never the lock (it can be left stale by a crashed worker).
+IN_PROGRESS_JOB_STATUSES = ("pending", "running")
+
 # Statuses for which a full report is meaningful.
 REPORTABLE_JOB_STATUSES = {"awaiting_review", "completed"}
 
@@ -130,14 +135,39 @@ async def create_analysis_job(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
-    if document.status not in ANALYSABLE_DOCUMENT_STATUSES:
+
+    # Block ONLY when an analysis is genuinely in progress for this document
+    # (a pending/running job). This is the single source of truth — never the
+    # document's own status, which a crashed worker can leave stale.
+    active_job = (
+        await db.execute(
+            select(AnalysisJob.id)
+            .where(
+                AnalysisJob.document_id == document.id,
+                AnalysisJob.status.in_(IN_PROGRESS_JOB_STATUSES),
+            )
+            .limit(1)
+        )
+    ).first()
+    if active_job is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An analysis is already in progress for this document.",
+        )
+
+    # Re-analysable once extraction has produced text. The document status may be
+    # stale — 'analysing' (orphaned by a crashed worker) or 'failed' (a failed
+    # run) — but the extracted text is intact, so heal the status back to
+    # 'extracted' to satisfy the pipeline precondition rather than rejecting.
+    if not document.extracted_text:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Document is not ready for analysis (status '{document.status}'). "
-                "It must be extracted before analysis can run."
+                "Document is not ready for analysis; it must be extracted first."
             ),
         )
+    if document.status not in ANALYSABLE_DOCUMENT_STATUSES:
+        document.status = "extracted"
 
     job = AnalysisJob(
         document_id=document.id,

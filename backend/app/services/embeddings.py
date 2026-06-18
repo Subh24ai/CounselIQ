@@ -15,7 +15,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import TYPE_CHECKING
+
+# Force CPU-only execution. torch reads these at import time, so set them here —
+# before the (lazy) ``sentence_transformers`` import pulls torch in. This avoids
+# macOS fork+Metal (MPS) crashes (SIGABRT / MPSGraphObject) in Celery's prefork
+# workers, where a forked child must never touch the GPU context.
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
@@ -41,7 +49,9 @@ class EmbeddingService:
             from sentence_transformers import SentenceTransformer
 
             logger.info("Loading embedding model '%s' (one-time)", self.MODEL_NAME)
-            self._model = SentenceTransformer(self.MODEL_NAME)
+            # Pin to CPU explicitly (belt-and-braces with the env vars above) so
+            # the model never initialises on MPS/CUDA in a forked worker.
+            self._model = SentenceTransformer(self.MODEL_NAME, device="cpu")
         return self._model
 
     # --- Synchronous core (CPU-bound) --------------------------------------

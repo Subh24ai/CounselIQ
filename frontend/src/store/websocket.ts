@@ -175,6 +175,16 @@ export const useWebSocketStore = create<WSState>((set, get) => ({
                   [message.job_id as string]: message.status as JobStatus,
                 },
               }));
+              // A status change (running/awaiting_review/completed/failed —
+              // including 'failed' published by the maintenance recovery task)
+              // must refresh any view of this job, the document's job list, and
+              // the document itself, so stale guards (e.g. the Analyse button)
+              // can't persist. Keys are broad because the job_update payload
+              // carries no document id.
+              const qc = getSharedQueryClient();
+              void qc?.invalidateQueries({ queryKey: ["job", message.job_id] });
+              void qc?.invalidateQueries({ queryKey: ["jobs"] });
+              void qc?.invalidateQueries({ queryKey: ["document"] });
             }
             break;
           case "agent_step":

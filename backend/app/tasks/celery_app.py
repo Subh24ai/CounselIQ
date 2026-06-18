@@ -23,6 +23,7 @@ celery_app = Celery(
         "app.tasks.extraction",
         "app.tasks.analysis",
         "app.tasks.embeddings",
+        "app.tasks.maintenance",
     ],
 )
 
@@ -37,6 +38,13 @@ celery_app.conf.update(
     # Textract jobs) and only prefetch one task at a time per worker.
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # LOCAL DEV ONLY (Apple Silicon): the embedding model is pinned to CPU (see
+    # app/services/embeddings.py) which fixes macOS fork+Metal crashes in the
+    # default prefork pool. If SIGABRT/MPSGraphObject crashes somehow persist on
+    # an Apple Silicon dev machine, uncomment the line below to run a single,
+    # un-forked process. 'solo' DISABLES concurrency and must NEVER be used in
+    # production — it is purely a last-resort local-dev fallback.
+    # worker_pool="solo",
     broker_connection_retry_on_startup=True,
     result_expires=3600,
     # Dedicated queues keep heavy extraction/analysis work off the default lane.
@@ -49,6 +57,13 @@ celery_app.conf.update(
     task_routes={
         "app.tasks.extraction.*": {"queue": "extraction"},
         "app.tasks.analysis.*": {"queue": "analysis"},
+    },
+    # Periodic recovery of orphaned analysis jobs (requires `celery beat`).
+    beat_schedule={
+        "detect-stale-jobs": {
+            "task": "app.tasks.maintenance.detect_stale_jobs_task",
+            "schedule": 300.0,  # every 5 minutes
+        },
     },
 )
 

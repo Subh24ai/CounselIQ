@@ -109,6 +109,23 @@ curl http://localhost:8000/health
 celery -A app.tasks.celery_app:celery_app worker --loglevel=info
 ```
 
+### Running Celery beat locally (scheduled maintenance)
+
+`beat` is a **separate process** from the worker. It schedules periodic jobs —
+notably `detect_stale_jobs_task`, which every 5 minutes fails any analysis job
+left stuck in `running` (e.g. after a worker crash/restart) so a job can never
+hang indefinitely.
+
+```bash
+celery -A app.tasks.celery_app:celery_app beat --loglevel=info
+```
+
+You can also run the recovery sweep once, on demand:
+
+```bash
+celery -A app.tasks.celery_app:celery_app call app.tasks.maintenance.detect_stale_jobs_task
+```
+
 ### Tests
 
 ```bash
