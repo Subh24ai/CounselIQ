@@ -11,12 +11,13 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
+from app.middleware.rate_limit import limiter
 from app.models import AnalysisJob, Clause, Document, RiskFlag, User
 from app.schemas.analysis import (
     JOB_TYPES,
@@ -102,9 +103,11 @@ async def _get_org_job(
 
 
 @router.post("/jobs", response_model=AnalysisJobResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
 async def create_analysis_job(
     payload: AnalysisJobCreate,
     request: Request,
+    response: Response,  # required so slowapi can attach rate-limit headers
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AnalysisJobResponse:

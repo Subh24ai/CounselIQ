@@ -16,7 +16,9 @@ Produce a concise executive summary of this contract review for a senior lawyer.
 
 The summary must include:
 1. CONTRACT OVERVIEW (2-3 sentences: what is this contract, parties, key terms)
-2. OVERALL RISK ASSESSMENT (1 sentence with the numeric score and what it means)
+2. OVERALL RISK ASSESSMENT (1 sentence with the numeric score and what it means).
+   Use EXACTLY this score in your summary, do not recalculate or restate a
+   different number: {overall_risk_score:.1f}/100
 3. CRITICAL ISSUES (bullet list of critical/high risks - title + one sentence each)
 4. KEY RECOMMENDATIONS (top 3-5 actions the lawyer should take, numbered)
 5. NEXT STEPS (what requires human judgment vs what is routine)
@@ -24,7 +26,7 @@ The summary must include:
 Write for a senior lawyer who will use this to decide where to focus their time.
 Be precise, not verbose. No generic statements.
 
-Risk score: {overall_risk_score}/100
+Risk score (ground truth — use this exact value): {overall_risk_score:.1f}/100
 Total clauses analysed: {clause_count}
 Total risk flags: {flag_count}
 Critical flags: {critical_count}
@@ -55,7 +57,9 @@ class SynthesiserAgent(BaseAgent):
         research_summary = self._build_research_summary(research_findings)
 
         prompt = PROMPT_TEMPLATE.format(
-            overall_risk_score=round(float(overall_risk_score), 1),
+            # Pass the float so the template's ``:.1f`` formats it; this is the
+            # exact ground-truth score the LLM is told to use verbatim.
+            overall_risk_score=float(overall_risk_score),
             clause_count=len(clauses),
             flag_count=len(risk_flags),
             critical_count=critical_count,

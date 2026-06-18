@@ -20,10 +20,14 @@ export function formatRelative(iso: string | null | undefined): string {
   }
 }
 
-/** Render a 0-100 risk score, or an em dash when not yet computed. */
+/**
+ * Render a 0-100 risk score to 1 decimal place, or an em dash when not yet
+ * computed. 1 decimal everywhere keeps tables, the gauge, and the summary text
+ * in agreement (e.g. 71.8 never appears as 72 in one place and 71.8 in another).
+ */
 export function formatRiskScore(score: number | null | undefined): string {
   if (score === null || score === undefined) return "—";
-  return Math.round(score).toString();
+  return score.toFixed(1);
 }
 
 /** Tailwind text colour class for a risk score band (0-30 / 31-60 / 61-100). */

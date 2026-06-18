@@ -19,6 +19,11 @@ from sqlalchemy.pool import NullPool
 
 from app.db.session import get_db
 from app.main import app
+from app.middleware.rate_limit import limiter
+
+# Rate limiting is disabled for the suite as a whole so the many auth calls
+# across tests are not throttled; the dedicated rate-limit test re-enables it.
+limiter.enabled = False
 
 # Database used by the model tests. Defaults to the local Docker Postgres
 # exposed on 5433; overridable via DATABASE_URL for CI.

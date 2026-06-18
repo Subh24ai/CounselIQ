@@ -145,6 +145,57 @@ async def test_upload_too_large(
     aws_mocks.upload_file.assert_not_awaited()
 
 
+DOCX_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_spoofed_mime_type(
+    api_client: AsyncClient, aws_mocks: AwsMocks
+) -> None:
+    """A .txt body with a spoofed application/pdf Content-Type is rejected."""
+    headers = await _register(api_client)
+    resp = await _upload(
+        api_client,
+        headers,
+        filename="fake.pdf",
+        content=b"This is plain text masquerading as a PDF.",
+        content_type=PDF_CONTENT_TYPE,
+    )
+    assert resp.status_code == 422, resp.text
+    # Rejected before anything reaches S3.
+    aws_mocks.upload_file.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_accepts_genuine_txt_and_docx(
+    api_client: AsyncClient, aws_mocks: AwsMocks
+) -> None:
+    """Magic-byte validation must not break legitimate TXT/DOCX uploads."""
+    headers = await _register(api_client)
+
+    txt = await _upload(
+        api_client,
+        headers,
+        filename="contract.txt",
+        content=b"Plain text contract body, perfectly valid.",
+        content_type="text/plain",
+        name="TXT Doc",
+    )
+    assert txt.status_code == 201, txt.text
+
+    docx = await _upload(
+        api_client,
+        headers,
+        filename="contract.docx",
+        content=b"PK\x03\x04" + b"\x00fake docx zip payload",
+        content_type=DOCX_CONTENT_TYPE,
+        name="DOCX Doc",
+    )
+    assert docx.status_code == 201, docx.text
+
+
 @pytest.mark.asyncio
 async def test_list_documents(
     api_client: AsyncClient, aws_mocks: AwsMocks

@@ -13,6 +13,18 @@ from pathlib import Path
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# JWT secrets that must never be used in production, regardless of length.
+_INSECURE_SECRETS = {
+    "secret",
+    "changeme",
+    "change-me",
+    "change-me-in-production",
+    "changeme123",
+    "password",
+    "your-secret-key",
+    "supersecret",
+}
+
 
 class Settings(BaseSettings):
     """Strongly-typed application settings."""
@@ -61,6 +73,11 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60
 
+    # --- Rate limiting ------------------------------------------------------
+    # Disabled in the test suite so the broad set of auth calls is not throttled;
+    # the dedicated rate-limit test re-enables it locally.
+    RATE_LIMIT_ENABLED: bool = True
+
     # --- CORS ---------------------------------------------------------------
     CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
@@ -88,6 +105,29 @@ class Settings(BaseSettings):
         if not self.ANTHROPIC_API_KEY and not self.GROQ_API_KEY:
             raise ValueError(
                 "At least one LLM key required: set ANTHROPIC_API_KEY or GROQ_API_KEY"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_production_secrets(self) -> Settings:
+        """Refuse to boot in production with a weak or default JWT secret.
+
+        Only enforced when ``ENVIRONMENT=production`` so local/dev/test runs keep
+        working with the placeholder default.
+        """
+        if self.ENVIRONMENT.lower() != "production":
+            return self
+
+        key = (self.JWT_SECRET_KEY or "").strip()
+        if len(key) < 32:
+            raise ValueError(
+                "In production, JWT_SECRET_KEY must be set to a random value of "
+                "at least 32 characters."
+            )
+        if key.lower() in _INSECURE_SECRETS:
+            raise ValueError(
+                "In production, JWT_SECRET_KEY must not be a common insecure "
+                "default (e.g. 'secret', 'changeme')."
             )
         return self
 

@@ -161,6 +161,11 @@ class RiskScorerAgent(BaseAgent):
                 self._normalise_flag(item, len(clauses))
                 for item in self.parse_json_array(raw)
             ]
+            deduped = self._deduplicate_flags(flags)
+            dropped = len(flags) - len(deduped)
+            if dropped:
+                logger.info("Risk scorer dropped %d duplicate flag(s)", dropped)
+            flags = deduped
 
             overall = self._compute_score(flags)
             should_escalate = any(flag["severity"] == "critical" for flag in flags)
@@ -201,14 +206,41 @@ class RiskScorerAgent(BaseAgent):
             }
 
     @staticmethod
+    def _deduplicate_flags(flags: list[dict]) -> list[dict]:
+        """Collapse duplicate flags for the same clause + category.
+
+        The LLM occasionally raises the same risk twice for one clause (the
+        live "Unlimited Indemnity" / "...(Duplicate)" bug). We group by
+        ``(clause_index, category)`` and keep only the highest-confidence flag
+        per group, preserving first-seen order.
+        """
+        best: dict[tuple, dict] = {}
+        order: list[tuple] = []
+        for flag in flags:
+            key = (flag.get("clause_index"), flag.get("category"))
+            existing = best.get(key)
+            if existing is None:
+                best[key] = flag
+                order.append(key)
+            elif (flag.get("confidence_score") or 0.0) > (
+                existing.get("confidence_score") or 0.0
+            ):
+                best[key] = flag
+        return [best[key] for key in order]
+
+    @staticmethod
     def _compute_score(flags: list[dict]) -> float:
-        """Weighted risk score in [0, 100] per the product specification."""
+        """Weighted risk score in [0, 100], rounded to 1 decimal place.
+
+        Rounding here makes the persisted score the single source of truth so
+        the API response, summary text, and UI gauge never disagree.
+        """
         score = 0.0
         for flag in flags:
             weight = RISK_TAXONOMY.get(flag["category"], {}).get("weight", DEFAULT_WEIGHT)
             severity_multiplier = SEVERITY_MULTIPLIER.get(flag["severity"], 0.2)
             score += weight * severity_multiplier * flag["confidence_score"] * 100
-        return min(100.0, score)
+        return round(min(100.0, score), 1)
 
     @staticmethod
     def _normalise_flag(item: dict, clause_count: int) -> dict:

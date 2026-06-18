@@ -33,7 +33,7 @@ export function RiskScoreGauge({
     <div
       className={cn("inline-flex flex-col items-center", className)}
       role="img"
-      aria-label={`Risk score ${Math.round(clamped)} out of 100, ${label}`}
+      aria-label={`Risk score ${clamped.toFixed(1)} out of 100, ${label}`}
     >
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
@@ -66,7 +66,7 @@ export function RiskScoreGauge({
             )}
             style={compact ? { color } : undefined}
           >
-            {Math.round(clamped)}
+            {clamped.toFixed(1)}
           </span>
           {!compact && (
             <span className="text-xs text-muted-foreground">/ 100</span>

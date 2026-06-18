@@ -55,13 +55,25 @@ def run_analysis_task(self, analysis_job_id: str) -> dict[str, str]:
         ).scalar_one_or_none()
 
         if job is None:
-            logger.error("AnalysisJob %s not found", analysis_job_id)
+            logger.error(
+                "AnalysisJob %s not found",
+                analysis_job_id,
+                extra={"job_id": analysis_job_id},
+            )
             return {"analysis_job_id": analysis_job_id, "status": "not_found"}
 
         try:
             return _execute(session, job)
         except Exception as exc:  # noqa: BLE001 - persist failure, never lose the job
-            logger.exception("Analysis failed for job %s: %s", analysis_job_id, exc)
+            logger.exception(
+                "Analysis failed for job %s: %s",
+                analysis_job_id,
+                exc,
+                extra={
+                    "organisation_id": str(job.organisation_id),
+                    "job_id": str(job.id),
+                },
+            )
             session.rollback()
             _mark_failed(session, job, str(exc))
             session.commit()
@@ -80,11 +92,13 @@ def _execute(session: Session, job: AnalysisJob) -> dict[str, str]:
     """Run the graph and persist results for a found, fetched job."""
     org_id = str(job.organisation_id)
     job_id = str(job.id)
+    log_extra = {"organisation_id": org_id, "job_id": job_id}
 
     job.status = "running"
     job.started_at = _now()
     job.error_message = None
     session.commit()
+    logger.info("Analysis started", extra=log_extra)
     publish_job_update(org_id, job_id, "running")
 
     document = session.execute(
@@ -226,11 +240,14 @@ def _persist_success(
         },
     )
     logger.info(
-        "Analysis complete for job %s: score=%s, %d clauses, %d flags",
-        job.id,
+        "Analysis complete: score=%s, %d clauses, %d flags",
         job.overall_risk_score,
         len(created_clauses),
         len(risk_flags_data),
+        extra={
+            "organisation_id": str(job.organisation_id),
+            "job_id": str(job.id),
+        },
     )
     return {"analysis_job_id": str(job.id), "status": "awaiting_review"}
 

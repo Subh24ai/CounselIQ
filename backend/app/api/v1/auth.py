@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
+from app.middleware.rate_limit import limiter
 from app.models import Organisation, User
 from app.schemas.auth import (
     LoginRequest,
@@ -45,9 +47,11 @@ def _issue_tokens(user: User) -> TokenResponse:
 
 
 @router.post("/register", response_model=TokenResponse)
+@limiter.limit("5/minute", key_func=get_remote_address)
 async def register(
     body: RegisterRequest,
     request: Request,
+    response: Response,  # required so slowapi can attach rate-limit headers
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """Create a new organisation and its first user (an ``org_admin``)."""
@@ -93,9 +97,11 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("10/minute", key_func=get_remote_address)
 async def login(
     body: LoginRequest,
     request: Request,
+    response: Response,  # required so slowapi can attach rate-limit headers
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """Authenticate a user with email + password and issue tokens."""

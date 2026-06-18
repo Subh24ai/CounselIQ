@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import logging
 import time
 
@@ -9,6 +10,11 @@ from app.agents.base import BaseAgent
 from app.agents.state import CounselIQState
 
 logger = logging.getLogger("counseliq.agents.extractor")
+
+# A clause whose normalised content is this similar to an earlier clause is
+# treated as a duplicate extraction (e.g. the same term quoted in a recital and
+# the operative section) and dropped, keeping the first occurrence.
+NEAR_DUPLICATE_RATIO = 0.92
 
 # Safety margin below the model context window; very long contracts are
 # truncated rather than rejected so analysis can still proceed on the bulk of
@@ -83,6 +89,11 @@ class ExtractorAgent(BaseAgent):
             raw = await self._acall_llm(prompt)
             parsed = self.parse_json_array(raw)
             clauses = [self._normalise_clause(item) for item in parsed]
+            deduped = self._deduplicate_clauses(clauses)
+            dropped = len(clauses) - len(deduped)
+            if dropped:
+                logger.info("Extractor dropped %d duplicate clause(s)", dropped)
+            clauses = deduped
 
             step = self._record_step(
                 status="completed",
@@ -112,6 +123,30 @@ class ExtractorAgent(BaseAgent):
                 "steps": [step],
                 "current_agent": self.name,
             }
+
+    @staticmethod
+    def _deduplicate_clauses(clauses: list[dict]) -> list[dict]:
+        """Drop exact/near-duplicate clauses, keeping the first occurrence.
+
+        Content is normalised (lowercased, whitespace-collapsed) and compared
+        with :class:`difflib.SequenceMatcher`; a ratio above
+        :data:`NEAR_DUPLICATE_RATIO` is treated as a duplicate. The same term
+        often appears in both a recital and the operative section, which the LLM
+        legitimately returns twice — we keep only one.
+        """
+        unique: list[dict] = []
+        seen_norms: list[str] = []
+        for clause in clauses:
+            norm = " ".join((clause.get("content") or "").lower().split())
+            is_duplicate = any(
+                difflib.SequenceMatcher(None, norm, prev).ratio()
+                > NEAR_DUPLICATE_RATIO
+                for prev in seen_norms
+            )
+            if not is_duplicate:
+                unique.append(clause)
+                seen_norms.append(norm)
+        return unique
 
     @staticmethod
     def _normalise_clause(item: dict) -> dict:

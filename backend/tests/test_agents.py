@@ -7,6 +7,7 @@ Every LLM call is mocked — no real Anthropic API is contacted. Agent unit test
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
@@ -97,6 +98,30 @@ def test_llm_factory_no_keys() -> None:
         Settings(_env_file=None, ANTHROPIC_API_KEY=None, GROQ_API_KEY=None)
 
 
+def test_production_requires_strong_jwt_secret() -> None:
+    """Production refuses to boot with a weak/default JWT secret."""
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    with pytest.raises(ValidationError, match="JWT_SECRET_KEY"):
+        Settings(
+            _env_file=None,
+            ANTHROPIC_API_KEY="x",
+            ENVIRONMENT="production",
+            JWT_SECRET_KEY="secret",
+        )
+
+    # A long, non-default secret is accepted in production.
+    ok = Settings(
+        _env_file=None,
+        ANTHROPIC_API_KEY="x",
+        ENVIRONMENT="production",
+        JWT_SECRET_KEY="z" * 40,
+    )
+    assert ok.is_production
+
+
 # --- 1. Extractor: valid JSON ------------------------------------------------
 async def test_extractor_parses_clauses() -> None:
     payload = (
@@ -161,6 +186,55 @@ async def test_risk_scorer_sets_escalate() -> None:
 
     assert result["should_escalate"] is True
     assert any(flag["severity"] == "critical" for flag in result["risk_flags"])
+
+
+async def test_extractor_deduplicates_near_identical_clauses() -> None:
+    """The same clause returned twice (e.g. recital + operative) collapses to one."""
+    clause_text = "The Receiving Party shall indemnify the Disclosing Party in full."
+    payload = json.dumps(
+        [
+            {"clause_type": "indemnity", "content": clause_text},
+            # Near-identical (trailing period/spacing differs) -> should be dropped.
+            {"clause_type": "indemnity", "content": clause_text + "  "},
+            {"clause_type": "termination", "content": "Either party may terminate."},
+        ]
+    )
+    with mock_llm(payload):
+        result = await ExtractorAgent().run(_base_state())
+
+    contents = [c["content"] for c in result["clauses"]]
+    assert len(result["clauses"]) == 2, contents
+    assert sum(c["clause_type"] == "indemnity" for c in result["clauses"]) == 1
+
+
+async def test_risk_scorer_deduplicates_same_clause_category() -> None:
+    """Two flags for the same clause+category keep only the highest confidence."""
+    clauses = [{"clause_type": "indemnity", "content": "Unlimited indemnity clause."}]
+    flags_json = json.dumps(
+        [
+            {
+                "clause_index": 0,
+                "category": "indemnity",
+                "severity": "critical",
+                "title": "Unlimited Indemnity",
+                "confidence_score": 0.95,
+            },
+            {
+                "clause_index": 0,
+                "category": "indemnity",
+                "severity": "critical",
+                "title": "Unlimited Indemnity (Duplicate)",
+                "confidence_score": 0.6,
+            },
+        ]
+    )
+    with mock_llm(flags_json):
+        result = await RiskScorerAgent().run(_base_state(clauses=clauses))
+
+    assert len(result["risk_flags"]) == 1
+    kept = result["risk_flags"][0]
+    assert kept["title"] == "Unlimited Indemnity"
+    assert kept["confidence_score"] == pytest.approx(0.95)
 
 
 # --- 5. Researcher: skips when no flags -------------------------------------

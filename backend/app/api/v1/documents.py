@@ -18,6 +18,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -26,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
+from app.middleware.rate_limit import limiter
 from app.models import Document, User
 from app.schemas.document import (
     DocumentListResponse,
@@ -44,12 +46,47 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 require_document_deleter = require_roles("org_admin", "legal_counsel")
 
 # Allowed upload types and the 50 MB size ceiling.
-ALLOWED_MIME_TYPES = {
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "text/plain",
-}
+MIME_PDF = "application/pdf"
+MIME_DOCX = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
+MIME_TXT = "text/plain"
+ALLOWED_MIME_TYPES = {MIME_PDF, MIME_DOCX, MIME_TXT}
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+
+# Known binary signatures that must never pass as plain text.
+_BINARY_SIGNATURES = (
+    b"%PDF-",  # PDF
+    b"PK\x03\x04",  # ZIP / OOXML (docx, xlsx, …)
+    b"MZ",  # Windows PE executable
+    b"\x7fELF",  # ELF executable
+    b"\xff\xd8\xff",  # JPEG
+    b"\x89PNG",  # PNG
+)
+
+
+def _content_matches_declared(content_type: str, data: bytes) -> bool:
+    """Validate the file's real content against its declared MIME type.
+
+    The client-supplied ``Content-Type`` is trivially spoofable, so we inspect
+    the leading magic bytes. DOCX (and other OOXML) files are ZIP archives, so a
+    ZIP signature is the strongest cheap signal available without unzipping.
+    """
+    if content_type == MIME_PDF:
+        return data[:5] == b"%PDF-"
+    if content_type == MIME_DOCX:
+        return data[:4] == b"PK\x03\x04"
+    if content_type == MIME_TXT:
+        # Plain text has no signature: reject anything that looks binary and
+        # require the content to decode as UTF-8.
+        if data.startswith(_BINARY_SIGNATURES) or b"\x00" in data[:8192]:
+            return False
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            return False
+        return True
+    return False
 
 
 def _client_ip(request: Request) -> str | None:
@@ -79,8 +116,10 @@ async def _get_org_document(
     response_model=DocumentResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("10/minute")
 async def upload_document(
     request: Request,
+    response: Response,  # required so slowapi can attach rate-limit headers
     file: UploadFile = File(...),
     name: str = Form(...),
     document_type: str = Form(...),
@@ -108,6 +147,17 @@ async def upload_document(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Uploaded file is empty.",
+        )
+
+    # Verify the actual file content matches its declared type — the
+    # Content-Type header alone is spoofable (e.g. a .exe renamed to .pdf).
+    if not _content_matches_declared(content_type, file_bytes):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "File content does not match its declared type. "
+                "Upload a genuine PDF, DOCX, or TXT file."
+            ),
         )
 
     document_id = uuid4()

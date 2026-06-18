@@ -12,6 +12,7 @@ import sys
 from datetime import UTC, datetime
 
 from app.config import settings
+from app.middleware.request_id import request_id_ctx
 
 
 class JsonFormatter(logging.Formatter):
@@ -25,6 +26,11 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "environment": settings.ENVIRONMENT,
         }
+
+        # Correlate every log line emitted while handling a request.
+        request_id = request_id_ctx.get()
+        if request_id:
+            payload["request_id"] = request_id
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
