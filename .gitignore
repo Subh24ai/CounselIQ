@@ -55,6 +55,23 @@ postgres_data/
 redis_data/
 
 # ---------------------------------------------------------------------------
+# Terraform (defense-in-depth; see infra/terraform/.gitignore for specifics).
+# State can contain secrets; tfvars holds real secrets — never commit either.
+# NOTE: *.tfvars ignores ALL real var files; terraform.tfvars.example is safe
+# because it does not end in ".tfvars". The provider lock (.terraform.lock.hcl)
+# is intentionally NOT ignored — it's committed to pin provider versions.
+# ---------------------------------------------------------------------------
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+**/*.tfvars
+*.auto.tfvars
+**/override.tf
+**/*_override.tf
+
+# ---------------------------------------------------------------------------
 # Editors / OS
 # ---------------------------------------------------------------------------
 .idea/

@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# Terraform — never commit state (may contain secrets), the provider cache,
+# crash logs, plan files, or the REAL tfvars. Only *.example is committed.
+# ---------------------------------------------------------------------------
+# Note: .terraform.lock.hcl is intentionally NOT ignored — commit it so the
+# provider versions are pinned/reproducible (HashiCorp's recommendation).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+
+# Real variable values with secrets — the .example file is committed instead
+# (terraform.tfvars.example does not end in ".tfvars", so it is not ignored).
+*.tfvars
+*.auto.tfvars
+
+# Local override files used for offline verification, etc.
+override.tf
+*_override.tf

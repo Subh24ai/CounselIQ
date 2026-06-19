@@ -1,0 +1,44 @@
+# ===========================================================================
+# Example variable values. Copy to terraform.tfvars and fill in real secrets:
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars is GITIGNORED — never commit real secrets. This .example
+# file contains only placeholders.
+# ===========================================================================
+
+# --- Region / naming (defaults are usually fine) ---------------------------
+aws_region   = "ap-south-1"
+project_name = "counseliq"
+environment  = "production"
+
+# --- DNS / TLS (REQUIRED) --------------------------------------------------
+# domain_name      = the FQDN the app is served on; the ACM cert is issued for it.
+# hosted_zone_name = the Route53 public hosted zone authoritative for that domain.
+# The hosted zone must already exist and its nameservers be registered with your
+# domain registrar (a one-time manual step Terraform cannot perform).
+domain_name      = "app.your-domain.com"
+hosted_zone_name = "your-domain.com"
+
+# --- RDS -------------------------------------------------------------------
+# REQUIRED. Use a strong password (no '/', '@', '"', or spaces — those break
+# the DATABASE_URL connection string).
+db_password = "CHANGE_ME_strong_db_password"
+
+# --- Secrets (REQUIRED: jwt + at least one LLM key) ------------------------
+# Generate the JWT secret with: openssl rand -hex 32
+# Must be >=32 chars because tasks run with ENVIRONMENT=production, which makes
+# the app reject weak JWT secrets at startup.
+jwt_secret_key = "CHANGE_ME_run_openssl_rand_hex_32"
+
+# Set one or both. Anthropic is the primary provider; Groq is the fallback.
+# Leave a key as "" to skip creating its SSM parameter.
+anthropic_api_key = "" # sk-ant-...
+groq_api_key      = "" # gsk_...
+
+# --- Optional overrides (sensible minimal defaults already set) ------------
+# db_instance_class        = "db.t4g.micro"
+# redis_node_type          = "cache.t4g.micro"
+# fargate_cpu_architecture = "ARM64"   # match the arch of images you build
+# container_image_tag      = "latest"
+# log_retention_days       = 7
