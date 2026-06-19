@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     # the dedicated rate-limit test re-enables it locally.
     RATE_LIMIT_ENABLED: bool = True
 
+    # --- Frontend -----------------------------------------------------------
+    # Public base URL of the Next.js app. Used to construct invitation links
+    # (the token is stored; the link is built on read, never persisted).
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # --- CORS ---------------------------------------------------------------
     CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 

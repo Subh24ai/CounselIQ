@@ -11,6 +11,7 @@ from app.models.audit_log import AuditLog
 from app.models.base import Base, TimestampMixin, UUIDMixin
 from app.models.clause import Clause
 from app.models.document import Document
+from app.models.invitation import Invitation
 from app.models.organisation import Organisation
 from app.models.regulatory_update import RegulatoryUpdate
 from app.models.review import Review
@@ -30,4 +31,5 @@ __all__ = [
     "Review",
     "AuditLog",
     "RegulatoryUpdate",
+    "Invitation",
 ]

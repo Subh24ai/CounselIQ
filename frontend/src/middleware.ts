@@ -14,11 +14,23 @@ const PROTECTED_PREFIXES = [
 // Auth pages — an already-authenticated user is redirected away from these.
 const AUTH_PREFIXES = ["/login", "/register"];
 
+// Public routes that must stay accessible WITHOUT a session — an invited person
+// has no account yet, so the invite-acceptance flow can never require auth and
+// is never redirected away even if a session cookie happens to be present.
+const PUBLIC_PREFIXES = ["/invite"];
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // The auth store mirrors the access token into this cookie so the
   // server-side middleware can read it (localStorage is client-only).
   const token = request.cookies.get("access_token")?.value;
+
+  const isPublic = PUBLIC_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+  if (isPublic) {
+    return NextResponse.next();
+  }
 
   const isProtected = PROTECTED_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),

@@ -56,6 +56,51 @@ export interface TokenResponse {
   token_type: string;
 }
 
+// --- Invitations ------------------------------------------------------------
+export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
+
+// Roles an org_admin may assign via an invitation (org_admin excluded).
+export type InvitableRole = "legal_counsel" | "compliance_officer" | "viewer";
+
+export interface Invitation {
+  id: string;
+  organisation_id: string;
+  email: string;
+  role: UserRole;
+  status: InvitationStatus;
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+  invite_link: string;
+}
+
+export interface InvitationCreate {
+  email: string;
+  role: InvitableRole;
+}
+
+export interface InvitationAcceptRequest {
+  token: string;
+  full_name: string;
+  password: string;
+  confirm_password: string;
+}
+
+export interface InvitationAcceptResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  user: User;
+  organisation: Organisation;
+}
+
+export interface InvitationValidateResponse {
+  email: string;
+  role: UserRole;
+  organisation_name: string;
+  expires_at: string;
+}
+
 // --- Documents --------------------------------------------------------------
 export type DocumentStatus =
   | "uploaded"

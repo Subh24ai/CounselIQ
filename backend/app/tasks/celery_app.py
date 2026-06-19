@@ -8,6 +8,7 @@ Worker entrypoint::
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 from kombu import Queue
 
 from app.config import settings
@@ -24,6 +25,7 @@ celery_app = Celery(
         "app.tasks.analysis",
         "app.tasks.embeddings",
         "app.tasks.maintenance",
+        "app.tasks.invitations",
     ],
 )
 
@@ -63,6 +65,10 @@ celery_app.conf.update(
         "detect-stale-jobs": {
             "task": "app.tasks.maintenance.detect_stale_jobs_task",
             "schedule": 300.0,  # every 5 minutes
+        },
+        "expire-invitations": {
+            "task": "app.tasks.invitations.expire_invitations_task",
+            "schedule": crontab(hour="*/6", minute=0),  # every 6 hours
         },
     },
 )

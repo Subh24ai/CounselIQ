@@ -12,6 +12,12 @@ import type {
   Document,
   DocumentListResponse,
   DocumentStatusResponse,
+  Invitation,
+  InvitationAcceptRequest,
+  InvitationAcceptResponse,
+  InvitationCreate,
+  InvitationStatus,
+  InvitationValidateResponse,
   LoginRequest,
   RefreshRequest,
   RegisterRequest,
@@ -137,6 +143,43 @@ export const authApi = {
   },
   async getMe(): Promise<User> {
     return (await api.get<User>("/auth/me")).data;
+  },
+};
+
+export const usersApi = {
+  async listUsers(): Promise<User[]> {
+    return (await api.get<User[]>("/users/")).data;
+  },
+};
+
+export const invitationsApi = {
+  async createInvitation(data: InvitationCreate): Promise<Invitation> {
+    return (await api.post<Invitation>("/invitations/", data)).data;
+  },
+  async listInvitations(status?: InvitationStatus): Promise<Invitation[]> {
+    return (
+      await api.get<Invitation[]>("/invitations/", {
+        params: status ? { status } : {},
+      })
+    ).data;
+  },
+  async revokeInvitation(id: string): Promise<void> {
+    await api.delete(`/invitations/${id}`);
+  },
+  // Public endpoints — no auth required.
+  async validateToken(token: string): Promise<InvitationValidateResponse> {
+    return (
+      await api.get<InvitationValidateResponse>(
+        `/invitations/validate/${token}`,
+      )
+    ).data;
+  },
+  async acceptInvitation(
+    data: InvitationAcceptRequest,
+  ): Promise<InvitationAcceptResponse> {
+    return (
+      await api.post<InvitationAcceptResponse>("/invitations/accept", data)
+    ).data;
   },
 };
 
