@@ -32,6 +32,100 @@ counseliq/
 
 ---
 
+## End-to-end workflow
+
+From document upload to a citation-backed, human-signed-off review — plus the
+regulatory-impact and self-healing background flows.
+
+```mermaid
+flowchart TD
+    %% ============ AUTH ============
+    subgraph AUTH["🔐 Auth"]
+        U([User]) --> REG["Register / Login<br/>POST /auth"]
+        REG --> JWT{{"JWT access token<br/>org-scoped"}}
+    end
+
+    %% ============ UPLOAD ============
+    subgraph UPLOAD["📤 Upload (FastAPI)"]
+        JWT --> UP["POST /documents/upload"]
+        UP --> VAL["Validate MIME + magic bytes<br/>+ 50MB size cap"]
+        VAL -->|invalid| REJ["422 rejected"]
+        VAL -->|valid| S3[("AWS S3<br/>org-prefixed key")]
+        S3 --> DOCROW["Document row<br/>status: uploaded → queued"]
+        DOCROW --> ENQ1{{"enqueue<br/>extract_document_task"}}
+    end
+
+    %% ============ EXTRACTION ============
+    subgraph EXTRACT["📝 Extraction (Celery · extraction queue)"]
+        ENQ1 --> EX0["status: extracting"]
+        EX0 --> KIND{File type?}
+        KIND -->|PDF| TX["AWS Textract<br/>async job + poll"]
+        KIND -->|DOCX / TXT| INPROC["In-process extract"]
+        TX --> TXT["extracted_text + page_count"]
+        INPROC --> TXT
+        TXT --> EXOK["status: extracted ✅"]
+        TX -.->|timeout / error| EXFAIL["status: failed ❌"]
+        INPROC -.->|error| EXFAIL
+    end
+
+    %% ============ ANALYSIS ============
+    EXOK --> STARTJOB["POST /analysis/jobs<br/>(user starts analysis)"]
+    STARTJOB --> JOBROW["AnalysisJob<br/>status: pending"]
+    JOBROW --> ENQ2{{"enqueue<br/>run_analysis_task"}}
+
+    subgraph PIPE["🤖 LangGraph pipeline (Celery · analysis queue)"]
+        ENQ2 --> RUN["status: running<br/>document: analysing"]
+        RUN --> A1["①  Extractor<br/>segment → typed clauses"]
+        A1 -->|no clauses / unparseable| EH["error_handler"]
+        A1 --> A2["②  Risk Scorer<br/>grade vs risk taxonomy"]
+        A2 --> A3["③  Researcher<br/>cite Indian regulation<br/>(critical/high only)"]
+        A3 --> HR{High-risk<br/>flags?}
+        HR -->|yes| A4["④  Drafter<br/>safer alternative clauses"]
+        HR -->|no| A5
+        A4 --> A5["⑤  Synthesiser<br/>executive summary + score"]
+    end
+
+    A5 --> PERSIST["Persist results"]
+    PERSIST --> PG[("PostgreSQL + pgvector<br/>clauses (+embeddings),<br/>risk_flags, agent_trace,<br/>overall_risk_score")]
+    PERSIST --> AWAIT["job: awaiting_review<br/>document: completed ✅"]
+    EH --> JOBFAIL["job: failed ❌"]
+
+    %% ============ REAL-TIME ============
+    subgraph RT["⚡ Real-time trace"]
+        RUN -. publish steps .-> RED[("Redis pub/sub<br/>per-org channel")]
+        A5 -. publish steps .-> RED
+        RED --> SUB["redis_subscriber"]
+        SUB --> WS["WebSocket manager"]
+        WS --> FE["Live agent trace<br/>in frontend"]
+    end
+
+    %% ============ HUMAN REVIEW ============
+    subgraph REVIEW["✅ Human review (sign-off gate)"]
+        AWAIT --> SR["Reviewer opens review"]
+        SR --> DEC["Resolve each risk flag"]
+        DEC --> SUBMIT{Submit decision}
+        SUBMIT -->|open critical flag| BLOCK["Blocked — cannot approve"]
+        SUBMIT -->|approved| DONE["job: completed 🎉"]
+        SUBMIT -->|changes / reject| AWAIT
+    end
+
+    %% ============ REGULATORY MONITOR ============
+    subgraph REGMON["📚 Regulatory monitor"]
+        RU["Regulatory update ingested"] --> EMB["Embed title + summary"]
+        EMB --> MATCH["Cosine match vs org clause<br/>embeddings (≥ 0.35)"]
+        PG -. clause vectors .-> MATCH
+        MATCH --> AFF["Affected documents<br/>surfaced to org"]
+    end
+
+    %% ============ MAINTENANCE ============
+    subgraph MAINT["🩺 Self-healing (Celery beat · every 5 min)"]
+        BEAT["detect_stale_jobs"] --> STUCK["Job stuck in running<br/>(crashed worker)"]
+        STUCK --> HEAL["job → failed,<br/>document → extracted<br/>(re-analysable)"]
+    end
+```
+
+---
+
 ## Prerequisites
 
 - **Docker** + **Docker Compose v2** (`docker compose version`)
@@ -107,6 +201,10 @@ curl http://localhost:8000/health
 
 ```bash
 celery -A app.tasks.celery_app:celery_app worker --loglevel=info
+```
+
+```bash
+celery -A app.tasks.celery_app worker --loglevel=info -Q default,extraction,analysis
 ```
 
 ### Running Celery beat locally (scheduled maintenance)
