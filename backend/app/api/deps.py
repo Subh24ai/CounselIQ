@@ -1,3 +1,4 @@
+
 """Shared FastAPI dependencies for authentication and authorisation."""
 
 from __future__ import annotations

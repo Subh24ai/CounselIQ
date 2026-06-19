@@ -109,11 +109,11 @@ export default function RegisterPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Create your account</CardTitle>
+    <Card className="border-border/60 shadow-xl shadow-primary/[0.03]">
+      <CardHeader className="space-y-1.5 pb-4">
+        <CardTitle className="text-2xl">Create your account</CardTitle>
         <CardDescription>
-          Set up your organisation and admin account.
+          Set up your organisation and admin account in under a minute.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -124,6 +124,7 @@ export default function RegisterPage() {
               id="organisation_name"
               autoComplete="organization"
               placeholder="Acme Legal Pvt Ltd"
+              className="h-11"
               aria-invalid={!!errors.organisation_name}
               {...register("organisation_name")}
             />
@@ -140,6 +141,7 @@ export default function RegisterPage() {
               id="full_name"
               autoComplete="name"
               placeholder="Priya Sharma"
+              className="h-11"
               aria-invalid={!!errors.full_name}
               {...register("full_name")}
             />
@@ -157,6 +159,7 @@ export default function RegisterPage() {
               type="email"
               autoComplete="email"
               placeholder="you@enterprise.in"
+              className="h-11"
               aria-invalid={!!errors.email}
               {...register("email")}
             />
@@ -173,6 +176,7 @@ export default function RegisterPage() {
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
                 placeholder="At least 8 characters"
+                className="h-11 pr-10"
                 aria-invalid={!!errors.password}
                 {...register("password")}
               />
@@ -221,6 +225,7 @@ export default function RegisterPage() {
               type={showPassword ? "text" : "password"}
               autoComplete="new-password"
               placeholder="Re-enter your password"
+              className="h-11"
               aria-invalid={!!errors.confirm_password}
               {...register("confirm_password")}
             />
@@ -237,7 +242,11 @@ export default function RegisterPage() {
             </Alert>
           )}
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            className="h-11 w-full text-[15px]"
+            disabled={isSubmitting}
+          >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isSubmitting ? "Creating account…" : "Create account"}
           </Button>

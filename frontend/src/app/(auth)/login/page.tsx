@@ -62,10 +62,12 @@ export default function LoginPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Sign in</CardTitle>
-        <CardDescription>Access your compliance workspace.</CardDescription>
+    <Card className="border-border/60 shadow-xl shadow-primary/[0.03]">
+      <CardHeader className="space-y-1.5 pb-4">
+        <CardTitle className="text-2xl">Welcome back</CardTitle>
+        <CardDescription>
+          Sign in to access your compliance workspace.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
@@ -76,6 +78,7 @@ export default function LoginPage() {
               type="email"
               autoComplete="email"
               placeholder="you@enterprise.in"
+              className="h-11"
               aria-invalid={!!errors.email}
               {...register("email")}
             />
@@ -92,6 +95,7 @@ export default function LoginPage() {
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
                 placeholder="••••••••"
+                className="h-11 pr-10"
                 aria-invalid={!!errors.password}
                 {...register("password")}
               />
@@ -121,7 +125,11 @@ export default function LoginPage() {
             </Alert>
           )}
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            className="h-11 w-full text-[15px]"
+            disabled={isSubmitting}
+          >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isSubmitting ? "Signing in…" : "Sign in"}
           </Button>
