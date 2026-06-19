@@ -10,6 +10,15 @@ RUN npm install
 FROM node:20-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so they
+# must be present during `npm run build`. The CI/CD deploy and infra/scripts/
+# deploy.sh pass them as Docker build-args; locally they default to empty.
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
